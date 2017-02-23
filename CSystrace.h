@@ -28,6 +28,24 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#if defined(_WIN32) || defined(__CYGWIN__)
+# if defined(BUILDING_DLL)
+#  if defined(__GNUC__)
+#   define SYSTRACE_EXPORT __attribute__ ((dllexport))
+#  else
+#   define SYSTRACE_EXPORT __declspec(dllexport)
+#  endif
+# else
+#  if defined(__GNUC__)
+#   define SYSTRACE_EXPORT __attribute__ ((dllimport))
+#  else
+#   define SYSTRACE_EXPORT __declspec(dllimport)
+#  endif
+# endif
+#else
+# define SYSTRACE_EXPORT __attribute__ ((visibility ("default")))
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -42,7 +60,7 @@ extern "C"
  *
  * \sa systrace_deinit()
  */
-void systrace_init();
+SYSTRACE_EXPORT void systrace_init();
 
 /*!
  * Perform necessary tear down. Should be called before termination, and no systrace
@@ -54,7 +72,7 @@ void systrace_init();
  *
  * \sa systrace_init()
  */
-void systrace_deinit();
+SYSTRACE_EXPORT void systrace_deinit();
 
 /*!
  * Determine whether or not a given \a module should be traced.
@@ -63,7 +81,7 @@ void systrace_deinit();
  *
  * Returns 1 if the event should be traced, 0 otherwise.
  */
-int systrace_should_trace(const char *module);
+SYSTRACE_EXPORT int systrace_should_trace(const char *module);
 
 /*!
  * Record the start of a duration event in a given \a module and \a tracepoint.
@@ -72,7 +90,7 @@ int systrace_should_trace(const char *module);
  *
  * \sa systrace_async_begin(), systrace_duration_end()
  */
-void systrace_duration_begin(const char *module, const char *tracepoint);
+SYSTRACE_EXPORT void systrace_duration_begin(const char *module, const char *tracepoint);
 
 /*!
  * Record the end of a duration event in a given \a module and \a tracepoint.
@@ -82,7 +100,7 @@ void systrace_duration_begin(const char *module, const char *tracepoint);
  *
  * \sa systrace_async_end()
  */
-void systrace_duration_end(const char *module, const char *tracepoint);
+SYSTRACE_EXPORT void systrace_duration_end(const char *module, const char *tracepoint);
 
 /*!
  * Record a counter event for the given \a module and \a tracepoint as being of
@@ -91,7 +109,7 @@ void systrace_duration_end(const char *module, const char *tracepoint);
  * In this particular case, \a tracepoint is most likely most useful to
  * represent a variable rather than a code location
  */
-void systrace_record_counter(const char *module, const char *tracepoint, int value);
+SYSTRACE_EXPORT void systrace_record_counter(const char *module, const char *tracepoint, int value);
 
 // ### 64 bit needed?
 
@@ -104,7 +122,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
  *
  * \sa systrace_duration_begin(), systrace_async_end()
  */
-void systrace_async_begin(const char *module, const char *tracepoint, const void *cookie);
+SYSTRACE_EXPORT void systrace_async_begin(const char *module, const char *tracepoint, const void *cookie);
 
 /*!
  * Record the end of an asynchronous event for the given \a module and
@@ -116,7 +134,7 @@ void systrace_async_begin(const char *module, const char *tracepoint, const void
  *
  * \sa systrace_async_begin()
  */
-void systrace_async_end(const char *module, const char *tracepoint, const void *cookie);
+SYSTRACE_EXPORT void systrace_async_end(const char *module, const char *tracepoint, const void *cookie);
 
 #ifdef __cplusplus
 }
@@ -128,7 +146,7 @@ void systrace_async_end(const char *module, const char *tracepoint, const void *
  * systrace_duration_end(), without the requirement to ensure
  * systrace_duration_end() is called in all exits.
  */
-struct CSystraceEvent
+struct SYSTRACE_EXPORT CSystraceEvent
 {
     /*!
      * Starts a tracepoint for \a module and \a tracepoint.
@@ -200,7 +218,7 @@ private:
  * systrace_async_end(), without the requirement to ensure
  * systrace_async_end() is called in all exits.
  */
-struct CSystraceAsyncEvent
+struct SYSTRACE_EXPORT CSystraceAsyncEvent
 {
     /*!
      * Starts an asynchronous event for \a module and \a tracepoint, with the
