@@ -1,3 +1,5 @@
+# Introduction
+
 This code helps you write to the Linux kernel's ftrace buffer (see
 https://www.kernel.org/doc/Documentation/trace/ftrace.txt for some additional
 information) from userspace. Android's systrace tool is able to read the
@@ -56,3 +58,13 @@ implementation).
 
 Note! This code has absolutely no API or ABI stability guarentees. It also
 has no stability guarentees in general, but it probably won't eat your pet dog.
+
+# Useful handy hints
+
+* `adb install` will get an apk on the device
+* `adb shell am force-stop org.myfoo.mybar` will stop the process
+* `adb shell am start -n org.myfoo.mybar/myActivity.Thing.Here` will start it
+* `systrace.py --time=20 -o mynewtrace.html sched gfx view wm app --timeout=120
+--collection-timeout=120 --buf-size=102400` will help you trace it (add more
+buffer as needed, depending on the amount of tracing you do, and the number of
+seconds you collect for).
