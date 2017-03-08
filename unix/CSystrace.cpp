@@ -21,6 +21,7 @@
  * SOFTWARE.
  */
 
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <assert.h>
 #include <stdio.h>
@@ -71,6 +72,7 @@ static void submit_chunk()
     if (shm_fd == -1)
         return;
 
+    shutdown(shm_fd, SHUT_WR);
     close(shm_fd);
     shm_fd = -1;
     shm_ptr = 0;
@@ -78,7 +80,10 @@ static void submit_chunk()
     char buf[1024];
     int blen = sprintf(buf, "%s\n", current_chunk_name);
     printf("Sending %s", buf);
-    write(traced_fd, buf, blen);
+    int ret = write(traced_fd, buf, blen);
+    if (ret == -1) {
+        perror("Can't write to traced!");
+    }
     
     free((void*)current_chunk_name);
     current_chunk_name = 0;
@@ -157,6 +162,8 @@ __attribute__((constructor)) void systrace_init()
 
 __attribute__((destructor)) void systrace_deinit()
 {
+    if (traced_fd == -1)
+        return;
     submit_chunk();
     close(traced_fd);
     traced_fd = -1;

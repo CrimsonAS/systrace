@@ -4,7 +4,6 @@
 int main(int argc, char **) 
 {
     systrace_init();
-    TRACE_EVENT_ASYNC_BEGIN0("qtgui::kernel", "asyncTest", &argc);
     TRACE_EVENT0("app", "main");
     {
 
@@ -27,12 +26,15 @@ int main(int argc, char **)
 
     TRACE_EVENT0("app", "FiddlingBuffers");
     for (int i = 0; i < 100; ++i) {
+    TRACE_EVENT_ASYNC_BEGIN0("qtgui::kernel", "asyncTest", &argc);
         char *buf;
         asprintf(&buf, "alterBuffers-%d", i);
         TRACE_EVENT0("app", buf);
         TRACE_COUNTER1("app", "freeBuffers", rand() % 100);
+    TRACE_EVENT_ASYNC_END0("qtgui::kernel", "asyncTest", &argc);
     }
 
-    TRACE_EVENT_ASYNC_END0("qtgui::kernel", "asyncTest", &argc);
+
+    printf("Ending\n");
     systrace_deinit();
 }

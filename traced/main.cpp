@@ -131,14 +131,18 @@ void controlReader(int cmdfd)
     if ((lcmd = ::read(cmdfd, cmd, sizeof(cmd)-1)) < 0)
         return;
 
-        buf += cmd;
-        qDebug() << buf;
+    buf += cmd;
+    qDebug() << buf;
     QList<QByteArray> bufs = buf.split('\n');
     for (const QByteArray &abuf : bufs) {
+        if (abuf.isEmpty()) {
+            buf = "";
+            break;
+        }
         fprintf(stderr, "Trying chunk %s\n", abuf.constData());
         if (!processChunk(abuf.constData())) {
-            buf = abuf;
-            break;
+            // segment got eaten out from under us perhaps
+            continue;
         }
         fprintf(stderr, "Done chunk %s\n", abuf.constData());
     }
