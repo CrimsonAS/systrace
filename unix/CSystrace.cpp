@@ -21,7 +21,9 @@
  * SOFTWARE.
  */
 
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/time.h>
 #include <assert.h>
 #include <stdio.h>
@@ -153,10 +155,20 @@ __attribute__((constructor)) void systrace_init()
 
     if (getenv("TRACED") == NULL) {
         traced_fd = open("/tmp/traced", O_WRONLY);
-        if (traced_fd == -1) {
-            perror("Can't open connection to traced command socket!");
-            //abort();
+
+        if ((traced_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+            perror("Can't create socket for traced!");
         }
+
+        struct sockaddr_un remote;
+        remote.sun_family = AF_UNIX;
+        strcpy(remote.sun_path, "/tmp/traced");
+        int len = strlen(remote.sun_path) + sizeof(remote.sun_family) + 1;
+        if (connect(traced_fd, (struct sockaddr *)&remote, len) == -1) {
+            perror("Can't connect to traced!");
+        }
+    } else {
+        fprintf(stderr, "Running trace daemon. Not tracing.\n");
     }
 }
 
@@ -171,6 +183,8 @@ __attribute__((destructor)) void systrace_deinit()
 
 int systrace_should_trace(const char *module)
 {
+    if (traced_fd == -1)
+        return 0;
     // hack this if you want to temporarily omit some traces.
     return 1;
 }

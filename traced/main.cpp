@@ -26,9 +26,11 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/shm.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
-#include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -37,6 +39,7 @@
 #include <QCoreApplication>
 #include <QByteArray>
 #include <QSocketNotifier>
+#include <QObject>
 
 #include "CTraceMessages.h"
 
@@ -121,17 +124,29 @@ out:
     return true;
 }
 
-// ### use sockets instead, this is just broken with multiple clients
-void controlReader(int cmdfd)
+class TraceClient : public QObject
+{
+    Q_OBJECT
+public:
+    int fd;
+    QByteArray buf;
+
+public slots:
+    void readControlSocket();
+};
+
+void TraceClient::readControlSocket()
 {
     int lcmd;
-    static char cmd[1024];
-    static QByteArray buf;
+    char cmd[1024];
 
-    if ((lcmd = ::read(cmdfd, cmd, sizeof(cmd)-1)) < 0)
+    if ((lcmd = ::read(this->fd, cmd, sizeof(cmd)-1)) <= 0) {
+        close(this->fd);
+        this->deleteLater();
         return;
+    }
 
-    buf += cmd;
+    buf += QByteArray(cmd, lcmd);
     qDebug() << buf;
     QList<QByteArray> bufs = buf.split('\n');
     for (const QByteArray &abuf : bufs) {
@@ -154,23 +169,47 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
+    struct sockaddr_un local;
+    int s = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (s == -1) {
+        perror("Can't create socket");
+        abort();
+    }
+
+    int optval = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+
+    local.sun_family = AF_UNIX;
+    strcpy(local.sun_path, "/tmp/traced");
+    unlink(local.sun_path);
+    int len = strlen(local.sun_path) + sizeof(local.sun_family) + 1;
+    if (bind(s, (struct sockaddr *)&local, len) == -1) {
+        perror("Can't bind()");
+        abort();
+    }
+
+    if (listen(s, 5) == -1) {
+        perror("Can't listen");
+        abort();
+    }
+
+    QObject::connect(new QSocketNotifier(s, QSocketNotifier::Read),
+        &QSocketNotifier::activated, [s]() {
+        struct sockaddr_un remote;
+        int len = sizeof(struct sockaddr_un);
+        int client = accept(s, (struct sockaddr*)&remote, (socklen_t *)&len);
+        TraceClient *tc = new TraceClient; // ### cleanup
+        tc->fd = client;
+        QSocketNotifier *csn = new QSocketNotifier(client,  QSocketNotifier::Read);
+        csn->setParent(tc);
+        QObject::connect(csn, 
+            &QSocketNotifier::activated, tc, &TraceClient::readControlSocket);
+    });
+
     printf("[\n");
-
-    // Open the remote control interface.
-    if (mknod("/tmp/traced", S_IFIFO | 0666, 0) == -1 && errno != EEXIST) {
-        perror("mknod traced");
-        abort();
-    }
-
-    int fd = open("/tmp/traced", O_RDWR);
-    if (fd == -1) {
-        perror("open traced");
-        abort();
-    }
-
-    QObject::connect(new QSocketNotifier(fd, QSocketNotifier::Read),
-        &QSocketNotifier::activated, &controlReader);
 
     return app.exec();
     printf("]\n");
 }
+
+#include "main.moc"
