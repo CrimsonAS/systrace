@@ -215,6 +215,39 @@ private:
     const char *m_tracepoint;
     const void *m_cookie;
 };
-#endif
+
+#define COMBINE1(X,Y) X##Y  // helper macros
+#define COMBINE(X,Y) COMBINE1(X,Y)
+
+// ### TRACE_STR_COPY
+// ### TRACE_EVENT_COPY_XXX
+
+// Records a pair of begin and end events called "name" for the current
+// scope, with 0, 1 or 2 associated arguments. If the category is not
+// enabled, then this does nothing.
+// - category and name strings must have application lifetime (statics or
+//   literals). They may not include " chars.
+#define TRACE_EVENT0(module, tracepoint) \
+    CSystraceEvent COMBINE(ev, __LINE__) (module, tracepoint);
+// ### EVENT1, EVENT2
+
+// ### TRACE_EVENT_INSTANT0?
+
+
+// ###:
+// Pointers can be used for the ID parameter, and they will be mangled
+// internally so that the same pointer on two different processes will not
+// match.
+#define TRACE_EVENT_ASYNC_BEGIN0(module, tracepoint, cookie) \
+    systrace_async_begin(module, tracepoint, cookie);
+#define TRACE_EVENT_ASYNC_END0(module, tracepoint, cookie) \
+    systrace_async_begin(module, tracepoint, cookie);
+// ### 1 & 2
+
+#define TRACE_COUNTER1(module, tracepoint, value) \
+    systrace_record_counter(module, tracepoint, value);
+// ### TRACE_COUNTER2
+
+#endif // __cplusplus
 
 #endif // SYSTRACE_H
