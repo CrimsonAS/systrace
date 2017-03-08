@@ -111,7 +111,7 @@ SYSTRACE_EXPORT void systrace_duration_end(const char *module, const char *trace
  * In this particular case, \a tracepoint is most likely most useful to
  * represent a variable rather than a code location
  */
-SYSTRACE_EXPORT void systrace_record_counter(const char *module, const char *tracepoint, int value);
+SYSTRACE_EXPORT void systrace_record_counter(const char *module, const char *tracepoint, int value, int id = -1);
 
 // ### 64 bit needed?
 
@@ -253,6 +253,10 @@ private:
 #define TRACE_COUNTER1(module, tracepoint, value) \
     systrace_record_counter(module, tracepoint, value);
 // ### TRACE_COUNTER2
+
+#define TRACE_COUNTER_ID1(module, tracepoint, value, id) \
+    systrace_record_counter(module, tracepoint, value, id);
+
 
 #endif // __cplusplus
 

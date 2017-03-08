@@ -65,6 +65,7 @@ struct CounterMessage
     uint64_t microseconds;
     char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
     int value;
+    int id;
 };
 
 

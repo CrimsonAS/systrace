@@ -81,7 +81,7 @@ static void submit_chunk()
 
     char buf[1024];
     int blen = sprintf(buf, "%s\n", current_chunk_name);
-    printf("Sending %s", buf);
+    printf("TID %d sending %s", gettid(), buf);
     int ret = write(traced_fd, buf, blen);
     if (ret == -1) {
         perror("Can't write to traced!");
@@ -100,8 +100,8 @@ static void systrace_debug()
         return;
 
     in_debug = true;
-    systrace_record_counter("systrace",  "remainingChunkSize",  remaining_chunk_size);
-    systrace_record_counter("systrace", "chunkCount", chunk_count);
+    systrace_record_counter("systrace",  "remainingChunkSize",  remaining_chunk_size, gettid());
+    systrace_record_counter("systrace", "chunkCount", chunk_count, gettid());
     in_debug = false;
 }
 
@@ -236,7 +236,7 @@ void systrace_duration_end(const char *module, const char *tracepoint)
     systrace_debug();
 }
 
-void systrace_record_counter(const char *module, const char *tracepoint, int value)
+void systrace_record_counter(const char *module, const char *tracepoint, int value, int id)
 {
     if (!systrace_should_trace(module))
         return;
@@ -248,6 +248,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
     m->microseconds = getMicroseconds();
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
     m->value = value;
+    m->id = id;
     advance_chunk(sizeof(CounterMessage));
 
     systrace_debug();

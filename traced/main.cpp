@@ -87,8 +87,11 @@ bool processChunk(const char *name)
         }
         case 'C': {
             CounterMessage *m = (CounterMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->tracepoint, m->value);
-            ptr += sizeof(EndMessage);
+            if (m->id == -1)
+                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->tracepoint, m->value);
+            else
+                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->id, m->tracepoint, m->value);
+            ptr += sizeof(CounterMessage);
             break;
         }
         case 'b': {
