@@ -150,110 +150,31 @@ SYSTRACE_EXPORT void systrace_async_end(const char *module, const char *tracepoi
  */
 struct SYSTRACE_EXPORT CSystraceEvent
 {
-    /*!
-     * \internal
-     *
-     * Use fromData and fromRawData instead.
-     */
-private:
-    CSystraceEvent(const char *module, const char *tracepoint, bool ownsData)
-        : m_module(module)
-        , m_tracepoint(tracepoint)
-        , m_ownsData(ownsData)
-    {
-        systrace_duration_begin(m_module, m_tracepoint);
-    }
-
 public:
-    /*! Ends the tracepoint. */
-    ~CSystraceEvent()
-    {
-        end();
-    }
-
-    /*!
-     * Starts a tracepoint for \a module and \a tracepoint.
-     *
-     * The module & tracepoint data is copied. If you can ensure you do not need
-     * this copy, use fromRawData instead (for a slight improvement in
-     * efficiency).
-     *
-     * To stop the event, delete it (usually done by using the copy ctor &
-     * letting it go out of scope).
-     */
-    static CSystraceEvent fromData(const char *module, const char *tracepoint)
-    {
-        return CSystraceEvent(strdup(module), strdup(tracepoint), true);
-    }
-
     /*!
      * Starts a tracepoint for \a module and \a tracepoint.
      *
      * \note Ownership is not automatically taken over the provided
-     * data; so you must ensure that they outlive the CSystraceEvent
-     * instance, or use fromData instead (and suffer a slight performance
-     * penalty).
+     * data; so you must ensure that they outlive the CSystraceEvent instance.
      *
-     * To stop the event, delete it (usually done by using the copy ctor &
-     * letting it go out of scope).
+     * To stop the event, delete it.
      */
-    static CSystraceEvent fromRawData(const char *module, const char *tracepoint)
+    CSystraceEvent(const char *module, const char *tracepoint)
+        : m_module(module)
+        , m_tracepoint(tracepoint)
     {
-        return CSystraceEvent(module, tracepoint, false);
-    }
-
-    /*!
-     * Ends the current tracepoint, and starts a new one with the given \a tracepoint.
-     * This is useful for tracing what a function is doing over a number of steps
-     * of its execution with a single CSystraceEvent which will always be ended
-     * when the function returns. For instance:
-     *
-     * \code
-     * void Foo::doThing()
-     * {
-     *   CSystraceEvent ev(CSystraceEvent::fromRawData("app", "Foo::doThing"));
-     *   CSystraceEvent activeEv(CSystraceEvent::fromRawData("app", "loading"));
-     *   load();
-     *   activeEv.reset("app", "processing");
-     *   process();
-     * }
-     * \endcode
-     *
-     * With this example, there will be three events recorded. "Foo::doThing"
-     * for the total duration of the function, and two nested "loading" and
-     * "processing" events inside it.
-     *
-     * \note The provided data will be copied if the CSystraceEvent was created
-     * with fromData, but not if it was created with fromRawData. If you use
-     * fromRawData, you must ensure that they are either statically allocated,
-     * or that they outlive the CSystraceEvent instance.
-     */
-    void reset(const char *module, const char *tracepoint)
-    {
-        end();
-        if (m_ownsData) {
-            m_module = strdup(module);
-            m_tracepoint = strdup(tracepoint);
-        } else {
-            m_module = module;
-            m_tracepoint = tracepoint;
-        }
         systrace_duration_begin(m_module, m_tracepoint);
     }
 
-private:
-    void end()
+    /*! Ends the tracepoint. */
+    ~CSystraceEvent()
     {
         systrace_duration_end(m_module, m_tracepoint);
-        if (m_ownsData) {
-            free((char *)m_module);
-            free((char *)m_tracepoint);
-        }
     }
 
+private:
     const char *m_module;
     const char *m_tracepoint;
-    bool m_ownsData;
 };
 
 /*!
@@ -265,68 +186,34 @@ private:
  */
 struct SYSTRACE_EXPORT CSystraceAsyncEvent
 {
-private:
-    /*!
-     * \internal
-     *
-     * Use fromData and fromRawData instead.
-     */
-    CSystraceAsyncEvent(const char *module, const char *tracepoint, const void *cookie, bool ownsData)
-        : m_module(module)
-        , m_tracepoint(tracepoint)
-        , m_cookie(cookie)
-        , m_ownsData(ownsData)
-    {
-        systrace_async_begin(m_module, m_tracepoint, m_cookie);
-    }
-
 public:
-    /*! Ends the event. */
-    ~CSystraceAsyncEvent()
-    {
-        systrace_async_end(m_module, m_tracepoint, m_cookie);
-        if (m_ownsData) {
-            free((char *)m_module);
-            free((char *)m_tracepoint);
-        }
-    }
-
-    /*!
-     * Starts and returns an asynchronous event for \a module and \a tracepoint,
-     * with the given unique \a cookie.
-     *
-     * The module & tracepoint data is copied. If you can ensure you do not need
-     * this copy, use fromRawData instead (for a slight improvement in
-     * efficiency).
-     *
-     * To stop the event, delete it.
-     */
-    static CSystraceAsyncEvent *fromData(const char *module, const char *tracepoint, const void *cookie)
-    {
-        return new CSystraceAsyncEvent((const char *)strdup(module), strdup(tracepoint), cookie, true);
-    }
-
     /*!
      * Starts and returns an asynchronous event for \a module and \a tracepoint,
      * with the given unique \a cookie.
      *
      * \note Ownership is not automatically taken over the provided
-     * data; so you must ensure that they outlive the CSystraceAsyncEvent
-     * instance, or use fromData instead (and suffer a slight performance
-     * penalty).
+     * data; so you must ensure that they outlive the CSystraceAsyncEventinstance.
      *
      * To stop the event, delete it.
      */
-    static CSystraceAsyncEvent *fromRawData(const char *module, const char *tracepoint, const void *cookie)
+    CSystraceAsyncEvent(const char *module, const char *tracepoint, const void *cookie)
+        : m_module(module)
+        , m_tracepoint(tracepoint)
+        , m_cookie(cookie)
     {
-        return new CSystraceAsyncEvent(module, tracepoint, cookie, false);
+        systrace_async_begin(m_module, m_tracepoint, m_cookie);
+    }
+
+    /*! Ends the event. */
+    ~CSystraceAsyncEvent()
+    {
+        systrace_async_end(m_module, m_tracepoint, m_cookie);
     }
 
 private:
     const char *m_module;
     const char *m_tracepoint;
     const void *m_cookie;
-    bool m_ownsData;
 };
 #endif
 
