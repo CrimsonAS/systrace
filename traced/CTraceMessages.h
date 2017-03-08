@@ -25,6 +25,7 @@
 #define CTRACEMESSAGES_H
 
 #define TRACED_PROTOCOL_VERSION 256
+#define MAX_TRACEPOINT_LENGTH 20
 
 struct ChunkHeader
 {
@@ -32,5 +33,39 @@ struct ChunkHeader
     int pid;
     int tid;
 };
+
+struct BeginMessage
+{
+    uint64_t microseconds;
+    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+};
+
+struct EndMessage
+{
+    uint64_t microseconds;
+    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+};
+
+struct AsyncBeginMessage
+{
+    uint64_t microseconds;
+    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    const void *cookie;
+};
+
+struct AsyncEndMessage
+{
+    uint64_t microseconds;
+    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    const void *cookie;
+};
+
+struct CounterMessage
+{
+    uint64_t microseconds;
+    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    int value;
+};
+
 
 #endif // CTRACEMESSAGES_H

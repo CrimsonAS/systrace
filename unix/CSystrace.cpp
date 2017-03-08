@@ -40,6 +40,7 @@ const int ShmChunkSize = 1024 * 10;
 static thread_local int shm_fd = -1;
 static thread_local char *shm_ptr = 0;
 static thread_local const char *current_chunk_name = 0;
+static thread_local int remaining_chunk_size;
 
 // FD to communicate with traced
 static int traced_fd = 0;
@@ -53,13 +54,43 @@ static int gettid()
     return syscall(SYS_thread_selfid);
 }
 
+/*! Update the book keeping for the current position in the chunk.
+ */
+static void advance_chunk(int len)
+{
+    shm_ptr += len;
+    remaining_chunk_size -= len;
+    assert(remaining_chunk_size >= 0);
+}
+
+/*!
+ * Send the current chunk to traced for processing.
+ */
+static void submit_chunk()
+{
+    if (shm_fd == -1)
+        return;
+
+    close(shm_fd);
+    shm_fd = -1;
+    shm_ptr = 0;
+
+    write(traced_fd, current_chunk_name, strlen(current_chunk_name));
+    free((void*)current_chunk_name);
+    current_chunk_name = 0;
+}
+
 /*!
  * Make sure we have a valid SHM chunk to write events to, or abort if not.
  */
-static void ensure_chunk()
+static void ensure_chunk(int mlen)
 {
-    if (shm_fd != -1)
+    if (shm_fd != -1 && remaining_chunk_size >= mlen)
         return;
+
+    if (shm_fd != -1) {
+        submit_chunk();
+    }
 
     // ### linux via /dev/shm or memfd_create
     // ### pick a name based on process name + an incrementing id
@@ -79,30 +110,13 @@ static void ensure_chunk()
         perror("Can't map SHM!");
         abort();
     }
+    remaining_chunk_size = ShmChunkSize;
 
     ChunkHeader *h = (ChunkHeader*)shm_ptr;
     h->version = TRACED_PROTOCOL_VERSION;
     h->pid = getpid();
     h->tid = gettid();
-    shm_ptr += sizeof(ChunkHeader);
-}
-
-/*!
- * Send the current chunk to traced for processing. ensure_chunk will create a
- * new chunk on the next call.
- */
-static void submit_chunk()
-{
-    if (shm_fd == -1)
-        return;
-
-    close(shm_fd);
-    shm_fd = -1;
-    shm_ptr = 0;
-
-    write(traced_fd, current_chunk_name, strlen(current_chunk_name));
-    free((void*)current_chunk_name);
-    current_chunk_name = 0;
+    advance_chunk(sizeof(ChunkHeader));
 }
 
 __attribute__((constructor)) void systrace_init()
@@ -141,59 +155,78 @@ static uint64_t getMicroseconds()
 }
 
 
-const int SYSTRACE_MAX_LEN = 1024;
-
 // ### use "X" events?
 void systrace_duration_begin(const char *module, const char *tracepoint)
 {
     if (!systrace_should_trace(module))
         return;
 
-    ensure_chunk();
-    // ### don't allow writes over the end
-    int len = snprintf(shm_ptr, SYSTRACE_MAX_LEN, "B|%llu|%s\n", getMicroseconds(), tracepoint);
-    // ### allocate a new chunk & send if required
-    shm_ptr += len;
+    ensure_chunk(sizeof(BeginMessage) + 1);
+    *shm_ptr = 'B';
+    advance_chunk(1);
+    BeginMessage *m = (BeginMessage*)shm_ptr;
+    m->microseconds = getMicroseconds();
+    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    advance_chunk(sizeof(BeginMessage));
 }
 
 void systrace_duration_end(const char *module, const char *tracepoint)
 {
     if (!systrace_should_trace(module))
         return;
-    // ### don't allow writes over the end
-    int len = snprintf(shm_ptr, SYSTRACE_MAX_LEN, "E|%llu|%s\n", getMicroseconds(), tracepoint);
-    // ### allocate a new chunk & send if required
-    shm_ptr += len;
+
+    ensure_chunk(sizeof(EndMessage) + 1);
+    *shm_ptr = 'E';
+    advance_chunk(1);
+    EndMessage *m = (EndMessage*)shm_ptr;
+    m->microseconds = getMicroseconds();
+    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    advance_chunk(sizeof(EndMessage));
 }
 
 void systrace_record_counter(const char *module, const char *tracepoint, int value)
 {
     if (!systrace_should_trace(module))
         return;
-    // ### don't allow writes over the end
-    int len = snprintf(shm_ptr, SYSTRACE_MAX_LEN, "C|%llu|%s|%i\n", getMicroseconds(), tracepoint, value);
-    // ### allocate a new chunk & send if required
-    shm_ptr += len;
+
+    ensure_chunk(sizeof(CounterMessage) + 1);
+    *shm_ptr = 'C';
+    advance_chunk(1);
+    CounterMessage *m = (CounterMessage*)shm_ptr;
+    m->microseconds = getMicroseconds();
+    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->value = value;
+    advance_chunk(sizeof(CounterMessage));
 }
 
 void systrace_async_begin(const char *module, const char *tracepoint, const void *cookie)
 {
     if (!systrace_should_trace(module))
         return;
-    // ### don't allow writes over the end
-    int len = snprintf(shm_ptr, SYSTRACE_MAX_LEN, "S|%llu|%s|%p\n", getMicroseconds(), tracepoint, cookie);
-    // ### allocate a new chunk & send if required
-    shm_ptr += len;
+
+    ensure_chunk(sizeof(AsyncBeginMessage) + 1);
+    *shm_ptr = 'C';
+    advance_chunk(1);
+    AsyncBeginMessage *m = (AsyncBeginMessage*)shm_ptr;
+    m->microseconds = getMicroseconds();
+    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->cookie = cookie;
+    advance_chunk(sizeof(AsyncBeginMessage));
 }
 
 void systrace_async_end(const char *module, const char *tracepoint, const void *cookie)
 {
     if (!systrace_should_trace(module))
         return;
-    // ### don't allow writes over the end
-    int len = snprintf(shm_ptr, SYSTRACE_MAX_LEN, "F|%llu|%s|%p\n", getMicroseconds(), tracepoint, cookie);
-    // ### allocate a new chunk & send if required
-    shm_ptr += len;
+
+    ensure_chunk(sizeof(AsyncEndMessage) + 1);
+    *shm_ptr = 'C';
+    advance_chunk(1);
+    AsyncEndMessage *m = (AsyncEndMessage*)shm_ptr;
+    m->microseconds = getMicroseconds();
+    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->cookie = cookie;
+    advance_chunk(sizeof(AsyncEndMessage));
 }
 
 

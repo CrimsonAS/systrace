@@ -54,7 +54,6 @@ void controlReader(int cmdfd)
 
     int shm_fd;
     char *ptr;
-    int i;
     const char *name = cmd;
 
     shm_fd = shm_open(name, O_RDONLY, S_IRUSR | S_IWUSR);
@@ -79,32 +78,36 @@ void controlReader(int cmdfd)
 
     // ### don't write the array markers as part of chunk processing
     printf("[\n");
-    QByteArray ba = ptr;
-    QList<QByteArray> lines = ba.split('\n');
 
-    // ### strip last ,
-    for (const QByteArray &line : lines) {
-        if (line.isEmpty())
-            break;
-        switch (line[0]) {
+    while (1) {
+        switch (*ptr++) {
         case 'B': {
-            int time = line.split('|').at(1).toInt();
-            QByteArray name = line.split('|').at(2);
-            printf("{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, time, name.constData());
+            BeginMessage *m = (BeginMessage*)ptr;
+            printf("{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
+            ptr += sizeof(BeginMessage);
             break;
-
         }
         case 'E': {
-            int time = line.split('|').at(1).toInt();
-            QByteArray name = line.split('|').at(2);
-            printf("{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, time, name.constData());
+            EndMessage *m = (EndMessage*)ptr;
+            printf("{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
+            ptr += sizeof(EndMessage);
             break;
         }
+        case 'C': {
+            CounterMessage *m = (CounterMessage*)ptr;
+            printf("{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->tracepoint, m->value);
+            ptr += sizeof(EndMessage);
+            break;
+        }
+        case '\0':
+            goto out;
+            break;
         default:
             abort();
         }
     }
 
+out:
     printf("]\n");
 
     if (shm_unlink(name) == -1) {
