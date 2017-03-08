@@ -50,14 +50,14 @@ struct AsyncBeginMessage
 {
     uint64_t microseconds;
     char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
-    const void *cookie;
+    intptr_t cookie;
 };
 
 struct AsyncEndMessage
 {
     uint64_t microseconds;
     char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
-    const void *cookie;
+    intptr_t cookie;
 };
 
 struct CounterMessage

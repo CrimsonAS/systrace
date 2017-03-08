@@ -241,7 +241,7 @@ private:
 #define TRACE_EVENT_ASYNC_BEGIN0(module, tracepoint, cookie) \
     systrace_async_begin(module, tracepoint, cookie);
 #define TRACE_EVENT_ASYNC_END0(module, tracepoint, cookie) \
-    systrace_async_begin(module, tracepoint, cookie);
+    systrace_async_end(module, tracepoint, cookie);
 // ### 1 & 2
 
 #define TRACE_COUNTER1(module, tracepoint, value) \

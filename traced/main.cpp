@@ -47,15 +47,11 @@ bool processChunk(const char *name)
     int shm_fd;
     char *ptr;
 
-    fprintf(stderr, "attempting chunk %s\n", name);
-
     shm_fd = shm_open(name, O_RDONLY, S_IRUSR | S_IWUSR);
     if (shm_fd == -1) {
         fprintf(stderr, "shm_open %s: %s\n", name, strerror(errno));
         return false;
     }
-
-    fprintf(stderr, "processing chunk %s\n", name);
 
     ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr == MAP_FAILED) {
@@ -72,32 +68,48 @@ bool processChunk(const char *name)
     }
 
     while (1) {
-        switch (*ptr++) {
+        char c = *ptr++;
+        switch (c) {
         case 'B': {
             BeginMessage *m = (BeginMessage*)ptr;
-            printf("{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
+            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
             ptr += sizeof(BeginMessage);
             break;
         }
         case 'E': {
             EndMessage *m = (EndMessage*)ptr;
-            printf("{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
+            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
             ptr += sizeof(EndMessage);
             break;
         }
         case 'C': {
             CounterMessage *m = (CounterMessage*)ptr;
-            printf("{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->tracepoint, m->value);
+            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->tracepoint, m->value);
             ptr += sizeof(EndMessage);
+            break;
+        }
+        case 'b': {
+            AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
+            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, m->tracepoint, (void*)m->cookie);
+            ptr += sizeof(AsyncBeginMessage);
+            break;
+        }
+        case 'e': {
+            AsyncEndMessage *m = (AsyncEndMessage*)ptr;
+            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, m->tracepoint, (void*)m->cookie);
+            ptr += sizeof(AsyncEndMessage);
             break;
         }
         case '\0':
             goto out;
             break;
         default:
+            fprintf(stderr, "Unknown token %c\n", c);
             abort();
         }
     }
+
+    fflush(stdout);
 
 out:
 
@@ -119,14 +131,19 @@ void controlReader(int cmdfd)
     if ((lcmd = ::read(cmdfd, cmd, sizeof(cmd)-1)) < 0)
         return;
 
-    buf += cmd;
+        buf += cmd;
+        qDebug() << buf;
     QList<QByteArray> bufs = buf.split('\n');
     for (const QByteArray &abuf : bufs) {
+        fprintf(stderr, "Trying chunk %s\n", abuf.constData());
         if (!processChunk(abuf.constData())) {
             buf = abuf;
             break;
         }
+        fprintf(stderr, "Done chunk %s\n", abuf.constData());
     }
+
+    printf("\n\n\n\n");
 }
 
 int main(int argc, char **argv) 
@@ -136,8 +153,18 @@ int main(int argc, char **argv)
     printf("[\n");
 
     // Open the remote control interface.
-    mknod("/tmp/traced", S_IFIFO | 0666, 0);
-    QObject::connect(new QSocketNotifier(open("/tmp/traced", O_RDWR), QSocketNotifier::Read),
+    if (mknod("/tmp/traced", S_IFIFO | 0666, 0) == -1 && errno != EEXIST) {
+        perror("mknod traced");
+        abort();
+    }
+
+    int fd = open("/tmp/traced", O_RDWR);
+    if (fd == -1) {
+        perror("open traced");
+        abort();
+    }
+
+    QObject::connect(new QSocketNotifier(fd, QSocketNotifier::Read),
         &QSocketNotifier::activated, &controlReader);
 
     return app.exec();

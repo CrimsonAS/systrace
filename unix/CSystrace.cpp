@@ -146,10 +146,12 @@ __attribute__((constructor)) void systrace_init()
         shm_unlink(buf);
     }
 
-    traced_fd = open("/tmp/traced", O_WRONLY);
-    if (traced_fd == -1) {
-        perror("Can't open traced command");
-        abort();
+    if (getenv("TRACED") == NULL) {
+        traced_fd = open("/tmp/traced", O_WRONLY);
+        if (traced_fd == -1) {
+            perror("Can't open connection to traced command socket!");
+            //abort();
+        }
     }
 }
 
@@ -236,12 +238,12 @@ void systrace_async_begin(const char *module, const char *tracepoint, const void
         return;
 
     ensure_chunk(sizeof(AsyncBeginMessage) + 1);
-    *shm_ptr = 'C';
+    *shm_ptr = 'b';
     advance_chunk(1);
     AsyncBeginMessage *m = (AsyncBeginMessage*)shm_ptr;
     m->microseconds = getMicroseconds();
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
-    m->cookie = cookie;
+    m->cookie = (intptr_t)cookie;
     advance_chunk(sizeof(AsyncBeginMessage));
 
     systrace_debug();
@@ -253,12 +255,12 @@ void systrace_async_end(const char *module, const char *tracepoint, const void *
         return;
 
     ensure_chunk(sizeof(AsyncEndMessage) + 1);
-    *shm_ptr = 'C';
+    *shm_ptr = 'e';
     advance_chunk(1);
     AsyncEndMessage *m = (AsyncEndMessage*)shm_ptr;
     m->microseconds = getMicroseconds();
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
-    m->cookie = cookie;
+    m->cookie = (intptr_t)cookie;
     advance_chunk(sizeof(AsyncEndMessage));
 
     systrace_debug();
