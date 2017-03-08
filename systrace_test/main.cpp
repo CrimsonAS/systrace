@@ -3,12 +3,12 @@
 
 int main(int argc, char **argv) 
 {
+    systrace_init();
+    CSystraceEvent ev0(CSystraceEvent::fromRawData("app", "main"));
     {
-        systrace_init();
 
         systrace_record_counter("app", "freeBuffers", 5);
 
-        CSystraceEvent ev0(CSystraceEvent::fromRawData("app", "main"));
         {
             systrace_record_counter("app", "freeBuffers", 4);
             CSystraceEvent ev1(CSystraceEvent::fromRawData("app", "Something::useful"));
@@ -24,8 +24,11 @@ int main(int argc, char **argv)
         systrace_record_counter("app", "freeBuffers", 5);
     }
 
+    CSystraceEvent ev2(CSystraceEvent::fromRawData("app", "FiddlingBuffers"));
     for (int i = 0; i < 1000; ++i) {
-        CSystraceEvent ev2(CSystraceEvent::fromRawData("app", "alterBuffers"));
+        char *buf;
+        asprintf(&buf, "alterBuffers-%d", i);
+        CSystraceEvent ev2(CSystraceEvent::fromRawData("app", buf));
         systrace_record_counter("app", "freeBuffers", rand() % 100);
     }
 

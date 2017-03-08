@@ -42,16 +42,20 @@
 
 const int ShmChunkSize = 1024 * 10;
 
-void processChunk(const char *name)
+bool processChunk(const char *name)
 {
     int shm_fd;
     char *ptr;
 
+    fprintf(stderr, "attempting chunk %s\n", name);
+
     shm_fd = shm_open(name, O_RDONLY, S_IRUSR | S_IWUSR);
     if (shm_fd == -1) {
         fprintf(stderr, "shm_open %s: %s\n", name, strerror(errno));
-        abort();
+        return false;
     }
+
+    fprintf(stderr, "processing chunk %s\n", name);
 
     ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr == MAP_FAILED) {
@@ -64,7 +68,7 @@ void processChunk(const char *name)
 
     if (h->version != TRACED_PROTOCOL_VERSION) {
         fprintf(stderr, "malformed chunk! version %d\n", h->version);
-        return;
+        return true;
     }
 
     while (1) {
@@ -102,19 +106,27 @@ out:
         abort();
     }
 
+    return true;
 }
 
+// ### use sockets instead, this is just broken with multiple clients
 void controlReader(int cmdfd)
 {
     int lcmd;
-    char cmd[128];
+    static char cmd[1024];
+    static QByteArray buf;
 
     if ((lcmd = ::read(cmdfd, cmd, sizeof(cmd)-1)) < 0)
         return;
-    if (lcmd > 0 && cmd[lcmd-1] == '\n')
-        lcmd--;
-    cmd[lcmd] = '\0';
-    processChunk(cmd);
+
+    buf += cmd;
+    QList<QByteArray> bufs = buf.split('\n');
+    for (const QByteArray &abuf : bufs) {
+        if (!processChunk(abuf.constData())) {
+            buf = abuf;
+            break;
+        }
+    }
 }
 
 int main(int argc, char **argv) 

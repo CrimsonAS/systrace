@@ -79,13 +79,24 @@ static void submit_chunk()
     int blen = sprintf(buf, "%s\n", current_chunk_name);
     printf("Sending %s", buf);
     write(traced_fd, buf, blen);
-    usleep(90000); // ### fix traced's reading
     
     free((void*)current_chunk_name);
     current_chunk_name = 0;
 }
 
 static int chunk_count = 0;
+
+static void systrace_debug()
+{
+    static thread_local bool in_debug = false;
+    if (in_debug)
+        return;
+
+    in_debug = true;
+    systrace_record_counter("systrace",  "remainingChunkSize",  remaining_chunk_size);
+    systrace_record_counter("systrace", "chunkCount", chunk_count);
+    in_debug = false;
+}
 
 /*!
  * Make sure we have a valid SHM chunk to write events to, or abort if not.
@@ -182,6 +193,8 @@ void systrace_duration_begin(const char *module, const char *tracepoint)
     m->microseconds = getMicroseconds();
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
     advance_chunk(sizeof(BeginMessage));
+
+    systrace_debug();
 }
 
 void systrace_duration_end(const char *module, const char *tracepoint)
@@ -196,6 +209,8 @@ void systrace_duration_end(const char *module, const char *tracepoint)
     m->microseconds = getMicroseconds();
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
     advance_chunk(sizeof(EndMessage));
+
+    systrace_debug();
 }
 
 void systrace_record_counter(const char *module, const char *tracepoint, int value)
@@ -211,6 +226,8 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
     m->value = value;
     advance_chunk(sizeof(CounterMessage));
+
+    systrace_debug();
 }
 
 void systrace_async_begin(const char *module, const char *tracepoint, const void *cookie)
@@ -226,6 +243,8 @@ void systrace_async_begin(const char *module, const char *tracepoint, const void
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
     m->cookie = cookie;
     advance_chunk(sizeof(AsyncBeginMessage));
+
+    systrace_debug();
 }
 
 void systrace_async_end(const char *module, const char *tracepoint, const void *cookie)
@@ -241,6 +260,8 @@ void systrace_async_end(const char *module, const char *tracepoint, const void *
     strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
     m->cookie = cookie;
     advance_chunk(sizeof(AsyncEndMessage));
+
+    systrace_debug();
 }
 
 
