@@ -233,6 +233,12 @@ private:
 
 // ### TRACE_EVENT_INSTANT0?
 
+#define TRACE_EVENT_BEGIN0(module, tracepoint) \
+    systrace_duration_begin(module, tracepoint);
+#define TRACE_EVENT_END0(module, tracepoint) \
+    systrace_duration_end(module, tracepoint);
+// ### BEGIN & END 1, 2
+
 
 // ###:
 // Pointers can be used for the ID parameter, and they will be mangled
