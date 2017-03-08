@@ -83,7 +83,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
     if (!systrace_should_trace(module))
         return;
     char buffer[SYSTRACE_MAX_LEN];
-    int len = snprintf(buffer, SYSTRACE_MAX_LEN, "C|%i|%s-%i", getpid(), tracepoint, value);
+    int len = snprintf(buffer, SYSTRACE_MAX_LEN, "C|%i|%s|%i", getpid(), tracepoint, value);
     write(systrace_trace_target, buffer, len);
 }
 
