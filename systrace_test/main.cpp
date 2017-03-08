@@ -24,6 +24,10 @@ int main(int argc, char **argv)
         systrace_record_counter("app", "freeBuffers", 5);
     }
 
-    systrace_record_counter("app", "freeBuffers", 6);
+    for (int i = 0; i < 1000; ++i) {
+        CSystraceEvent ev2(CSystraceEvent::fromRawData("app", "alterBuffers"));
+        systrace_record_counter("app", "freeBuffers", rand() % 100);
+    }
+
     systrace_deinit();
 }

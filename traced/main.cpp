@@ -21,6 +21,7 @@
  * SOFTWARE.
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -41,30 +42,20 @@
 
 const int ShmChunkSize = 1024 * 10;
 
-void controlReader(int cmdfd)
+void processChunk(const char *name)
 {
-    int lcmd;
-    char cmd[128];
-
-    if ((lcmd = ::read(cmdfd, cmd, sizeof(cmd)-1)) < 0)
-        return;
-    if (lcmd > 0 && cmd[lcmd-1] == '\n')
-        lcmd--;
-    cmd[lcmd] = '\0';
-
     int shm_fd;
     char *ptr;
-    const char *name = cmd;
 
     shm_fd = shm_open(name, O_RDONLY, S_IRUSR | S_IWUSR);
     if (shm_fd == -1) {
-        fprintf(stderr, "shm_open %s", name);
+        fprintf(stderr, "shm_open %s: %s\n", name, strerror(errno));
         abort();
     }
 
     ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr == MAP_FAILED) {
-        fprintf(stderr, "mmap");
+        fprintf(stderr, "mmap %s\n", strerror(errno));
         abort();
     }
 
@@ -75,9 +66,6 @@ void controlReader(int cmdfd)
         fprintf(stderr, "malformed chunk! version %d\n", h->version);
         return;
     }
-
-    // ### don't write the array markers as part of chunk processing
-    printf("[\n");
 
     while (1) {
         switch (*ptr++) {
@@ -108,21 +96,38 @@ void controlReader(int cmdfd)
     }
 
 out:
-    printf("]\n");
 
     if (shm_unlink(name) == -1) {
-        fprintf(stderr, "shm_unlink");
+        fprintf(stderr, "shm_unlink: %s\n", strerror(errno));
         abort();
     }
+
+}
+
+void controlReader(int cmdfd)
+{
+    int lcmd;
+    char cmd[128];
+
+    if ((lcmd = ::read(cmdfd, cmd, sizeof(cmd)-1)) < 0)
+        return;
+    if (lcmd > 0 && cmd[lcmd-1] == '\n')
+        lcmd--;
+    cmd[lcmd] = '\0';
+    processChunk(cmd);
 }
 
 int main(int argc, char **argv) 
 {
     QCoreApplication app(argc, argv);
+
+    printf("[\n");
+
     // Open the remote control interface.
     mknod("/tmp/traced", S_IFIFO | 0666, 0);
     QObject::connect(new QSocketNotifier(open("/tmp/traced", O_RDWR), QSocketNotifier::Read),
-            &QSocketNotifier::activated, &controlReader);
+        &QSocketNotifier::activated, &controlReader);
 
     return app.exec();
+    printf("]\n");
 }

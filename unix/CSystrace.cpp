@@ -39,7 +39,7 @@
 const int ShmChunkSize = 1024 * 10;
 static thread_local int shm_fd = -1;
 static thread_local char *shm_ptr = 0;
-static thread_local const char *current_chunk_name = 0;
+static thread_local char *current_chunk_name = 0;
 static thread_local int remaining_chunk_size;
 
 // FD to communicate with traced
@@ -75,10 +75,17 @@ static void submit_chunk()
     shm_fd = -1;
     shm_ptr = 0;
 
-    write(traced_fd, current_chunk_name, strlen(current_chunk_name));
+    char buf[1024];
+    int blen = sprintf(buf, "%s\n", current_chunk_name);
+    printf("Sending %s", buf);
+    write(traced_fd, buf, blen);
+    usleep(90000); // ### fix traced's reading
+    
     free((void*)current_chunk_name);
     current_chunk_name = 0;
 }
+
+static int chunk_count = 0;
 
 /*!
  * Make sure we have a valid SHM chunk to write events to, or abort if not.
@@ -93,8 +100,8 @@ static void ensure_chunk(int mlen)
     }
 
     // ### linux via /dev/shm or memfd_create
-    // ### pick a name based on process name + an incrementing id
-    current_chunk_name = strdup("testchunk"); //tempnam("/tmp/", "trace");
+    // ### multiple processes!
+    asprintf(&current_chunk_name, "tracechunk-%d", chunk_count++);
     shm_unlink(current_chunk_name);
     shm_fd = shm_open(current_chunk_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
     if (shm_fd == -1) {
@@ -121,6 +128,13 @@ static void ensure_chunk(int mlen)
 
 __attribute__((constructor)) void systrace_init()
 {
+    // ### cleanup hack
+    for (int i = 0; i < 9999; ++i) {
+        char buf[1024];
+        sprintf(buf, "tracechunk-%d", i);
+        shm_unlink(buf);
+    }
+
     traced_fd = open("/tmp/traced", O_WRONLY);
     if (traced_fd == -1) {
         perror("Can't open traced command");
