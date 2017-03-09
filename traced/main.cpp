@@ -277,7 +277,7 @@ int main(int argc, char **argv)
         struct sockaddr_un remote;
         int len = sizeof(struct sockaddr_un);
         int client = accept(s, (struct sockaddr*)&remote, (socklen_t *)&len);
-        TraceClient *tc = new TraceClient; // ### cleanup
+        TraceClient *tc = new TraceClient;
         tc->fd = client;
         QSocketNotifier *csn = new QSocketNotifier(client,  QSocketNotifier::Read);
         csn->setParent(tc);
