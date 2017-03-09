@@ -181,6 +181,18 @@ bool TraceClient::processChunk(const char *name)
         }
     }
 
+#if 0
+            fprintf(traceOutputFile, 
+            "{\"pid\":%" PRIu64 ",\"tid\":0,\"ts\":%llu,\"ph\":\"v\",\"cat\":\"disabled-by-default-memory-infra\",\"name\":\"periodic_interval\",\"args\":{\"dumps\":{\"allocators\":{", h->pid, m->microseconds);
+                fprintf(traceOutputFile, "\"RootCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"801c8c513b1eb102\"},", rand());
+                fprintf(traceOutputFile, "\"AnotherRootCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"801c8c513b1eb102\"},", rand());
+                fprintf(traceOutputFile, "\"AnotherRootCategory/SubCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"806a715752927f85\"}", rand());
+            fprintf(traceOutputFile, "},");
+            fprintf(traceOutputFile, "\"allocators_graph\":[{\"importance\":0,\"source\":\"ded2e1173e7b598\",\"target\":\"95abf146875695a7\",\"type\":\"ownership\"},{\"importance\":0,\"source\":\"842bb4d00b4c8889\",\"target\":\"8cc156f029476744\",\"type\":\"ownership\"},{\"importance\":0,\"source\":\"993000ebdb6eae1d\",\"target\":\"587fda87208d4e6c\",\"type\":\"ownership\"}]");
+            fprintf(traceOutputFile, ",\"level_of_detail\":\"light\",");
+            fprintf(traceOutputFile, "\"process_totals\":{\"resident_set_bytes\":\"%d\"}}},\"tts\":681796,\"id\":\"%p\"},", rand(), (void*)rand());
+
+#endif
     fflush(traceOutputFile);
 
 out:
