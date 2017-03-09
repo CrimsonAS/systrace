@@ -235,9 +235,7 @@ int main(int argc, char **argv)
     });
 
     printf("[\n");
-
     return app.exec();
-    printf("]\n");
 }
 
 #include "main.moc"
