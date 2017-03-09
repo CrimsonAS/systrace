@@ -43,7 +43,9 @@ const int ShmChunkSize = 1024 * 10;
 static thread_local int shm_fd = -1;
 static thread_local char *shm_ptr = 0;
 static thread_local char *current_chunk_name = 0;
-static thread_local int remaining_chunk_size;
+
+// How much of the SHM chunk for this thread is left, in bytes?
+static thread_local int remainingChunkSize;
 
 // FD to communicate with traced
 static int traced_fd = -1;
@@ -68,8 +70,8 @@ static int gettid()
 static void advance_chunk(int len)
 {
     shm_ptr += len;
-    remaining_chunk_size -= len;
-    assert(remaining_chunk_size >= 0);
+    remainingChunkSize -= len;
+    assert(remainingChunkSize >= 0);
 }
 
 /*!
@@ -97,19 +99,29 @@ static void submit_chunk()
     current_chunk_name = 0;
 }
 
-static int chunk_count = 0;
+// How many SHM chunks have we allocated?
+// ### this needs to be thread safe
+static int allocatedChunkCount = 0;
 
 static void systrace_debug()
 {
-    static thread_local bool in_debug = false;
-    if (in_debug)
+    static thread_local bool debugging = false;
+    if (debugging)
         return;
 
-    in_debug = true;
-    systrace_record_counter("systrace",  "remainingChunkSize",  remaining_chunk_size, gettid());
-    systrace_record_counter("systrace", "chunkCount", chunk_count, gettid());
-    systrace_record_counter("systrace", "registeredStringCount", currentStringId, gettid());
-    in_debug = false;
+    debugging = true;
+    // These vars are to try avoid spurious reporting.
+    static thread_local int lastRemainingChunkSize = 0;
+    if (remainingChunkSize != lastRemainingChunkSize) {
+        lastRemainingChunkSize = remainingChunkSize;
+        systrace_record_counter("systrace",  "remainingChunkSize",  remainingChunkSize, gettid());
+    }
+    static uint64_t lastStringCount = 0;
+    if (lastStringCount != currentStringId) {
+        lastStringCount = currentStringId;
+        systrace_record_counter("systrace", "registeredStringCount", currentStringId); // not thread-specific
+    }
+    debugging = false;
 }
 
 /*!
@@ -117,7 +129,7 @@ static void systrace_debug()
  */
 static void ensure_chunk(int mlen)
 {
-    if (shm_fd != -1 && remaining_chunk_size >= mlen)
+    if (shm_fd != -1 && remainingChunkSize >= mlen)
         return;
 
     if (shm_fd != -1) {
@@ -126,7 +138,7 @@ static void ensure_chunk(int mlen)
 
     // ### linux via /dev/shm or memfd_create
     // ### multiple processes!
-    asprintf(&current_chunk_name, "tracechunk-%d", chunk_count++);
+    asprintf(&current_chunk_name, "tracechunk-%d", allocatedChunkCount++);
     shm_unlink(current_chunk_name);
     shm_fd = shm_open(current_chunk_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
     if (shm_fd == -1) {
@@ -142,7 +154,7 @@ static void ensure_chunk(int mlen)
         perror("Can't map SHM!");
         abort();
     }
-    remaining_chunk_size = ShmChunkSize;
+    remainingChunkSize = ShmChunkSize;
 
     ChunkHeader *h = (ChunkHeader*)shm_ptr;
     h->version = TRACED_PROTOCOL_VERSION;
