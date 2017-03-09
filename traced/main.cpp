@@ -41,11 +41,39 @@
 #include <QSocketNotifier>
 #include <QObject>
 
+#include <unordered_map>
+
 #include "CTraceMessages.h"
 
 const int ShmChunkSize = 1024 * 10;
 
-bool processChunk(const char *name)
+class TraceClient : public QObject
+{
+    Q_OBJECT
+public:
+    int fd;
+    QByteArray buf;
+
+public slots:
+    void readControlSocket();
+private:
+    bool processChunk(const char *name);
+    const char *getString(uint64_t id);
+
+    std::unordered_map<uint64_t, std::string> registeredStrings;
+};
+
+const char *TraceClient::getString(uint64_t id)
+{
+    auto it = registeredStrings.find(id);
+    if (it == registeredStrings.end()) {
+        return 0;
+    }
+
+    return it->second.c_str();
+}
+
+bool TraceClient::processChunk(const char *name)
 {
     int shm_fd;
     char *ptr;
@@ -73,36 +101,44 @@ bool processChunk(const char *name)
     while (1) {
         char c = *ptr++;
         switch (c) {
+        case 'r': {
+            // String registration
+            RegisterStringMessage *m = (RegisterStringMessage*)ptr;
+            std::string s(&m->stringData, m->length);
+            registeredStrings[m->id] = s;
+            ptr += sizeof(RegisterStringMessage) + m->length;
+            break;
+        }
         case 'B': {
             BeginMessage *m = (BeginMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
+            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(BeginMessage);
             break;
         }
         case 'E': {
             EndMessage *m = (EndMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, m->tracepoint);
+            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(EndMessage);
             break;
         }
         case 'C': {
             CounterMessage *m = (CounterMessage*)ptr;
             if (m->id == -1)
-                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->tracepoint, m->value);
+                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), getString(m->tracepointId), m->value);
             else
-                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, m->tracepoint, m->id, m->tracepoint, m->value);
+                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessage);
             break;
         }
         case 'b': {
             AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, m->tracepoint, (void*)m->cookie);
+            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncBeginMessage);
             break;
         }
         case 'e': {
             AsyncEndMessage *m = (AsyncEndMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, m->tracepoint, (void*)m->cookie);
+            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncEndMessage);
             break;
         }
@@ -126,17 +162,6 @@ out:
 
     return true;
 }
-
-class TraceClient : public QObject
-{
-    Q_OBJECT
-public:
-    int fd;
-    QByteArray buf;
-
-public slots:
-    void readControlSocket();
-};
 
 void TraceClient::readControlSocket()
 {

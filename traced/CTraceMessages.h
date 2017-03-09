@@ -25,7 +25,6 @@
 #define CTRACEMESSAGES_H
 
 #define TRACED_PROTOCOL_VERSION 256
-#define MAX_TRACEPOINT_LENGTH 20
 
 struct ChunkHeader
 {
@@ -34,36 +33,43 @@ struct ChunkHeader
     int tid;
 };
 
+struct RegisterStringMessage
+{
+    uint64_t id;
+    uint8_t length;
+    char stringData; // and it follows on for length bytes
+};
+
 struct BeginMessage
 {
     uint64_t microseconds;
-    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    uint64_t tracepointId;
 };
 
 struct EndMessage
 {
     uint64_t microseconds;
-    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    uint64_t tracepointId;
 };
 
 struct AsyncBeginMessage
 {
     uint64_t microseconds;
-    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    uint64_t tracepointId;
     intptr_t cookie;
 };
 
 struct AsyncEndMessage
 {
     uint64_t microseconds;
-    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    uint64_t tracepointId;
     intptr_t cookie;
 };
 
 struct CounterMessage
 {
     uint64_t microseconds;
-    char tracepoint[MAX_TRACEPOINT_LENGTH]; // ### awfully inefficient
+    uint64_t tracepointId;
     int value;
     int id;
 };

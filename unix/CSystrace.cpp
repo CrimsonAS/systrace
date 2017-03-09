@@ -48,6 +48,12 @@ static thread_local int remaining_chunk_size;
 // FD to communicate with traced
 static int traced_fd = 0;
 
+// Each thread registers unique strings as it comes across them here and sends a
+// registration message to traced.
+#include <unordered_map>
+static uint64_t currentStringId; // ### not thread-local! racey! fix registration
+static thread_local std::unordered_map<const char *, uint64_t> registeredStrings;
+
 //gettid(); except that mac sucks
 #include <unistd.h> // syscall()
 #include <sys/syscall.h> // SYS_thread_selfid
@@ -102,6 +108,7 @@ static void systrace_debug()
     in_debug = true;
     systrace_record_counter("systrace",  "remainingChunkSize",  remaining_chunk_size, gettid());
     systrace_record_counter("systrace", "chunkCount", chunk_count, gettid());
+    systrace_record_counter("systrace", "registeredStringCount", currentStringId, gettid());
     in_debug = false;
 }
 
@@ -202,6 +209,31 @@ static uint64_t getMicroseconds()
     return getBareMicroseconds() - originalMicroseconds;
 }
 
+// ### should make use of process id, thread id, and maybe some uniqueness too
+// just in case we repeat either PIDs or TIDs.
+static uint64_t getStringId(const char *string)
+{
+    auto it = registeredStrings.find(string);
+    if (it == registeredStrings.end()) {
+        uint64_t nid = currentStringId++;
+        registeredStrings[string] = nid;
+
+        int slen = strlen(string);
+        assert(slen < ShmChunkSize / 100); // 102 characters, assuming 10kb
+        ensure_chunk(sizeof(RegisterStringMessage) + slen + 1);
+        *shm_ptr = 'r';
+        advance_chunk(1);
+        RegisterStringMessage *m = (RegisterStringMessage*)shm_ptr;
+        m->id = nid;
+        m->length = slen;
+        strncpy(&m->stringData, string, slen);
+        advance_chunk(sizeof(RegisterStringMessage) + slen);
+        systrace_debug();
+        return nid;
+    }
+
+    return it->second;
+}
 
 // ### use "X" events?
 void systrace_duration_begin(const char *module, const char *tracepoint)
@@ -209,12 +241,14 @@ void systrace_duration_begin(const char *module, const char *tracepoint)
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t tpid = getStringId(tracepoint);
+
     ensure_chunk(sizeof(BeginMessage) + 1);
     *shm_ptr = 'B';
     advance_chunk(1);
     BeginMessage *m = (BeginMessage*)shm_ptr;
     m->microseconds = getMicroseconds();
-    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->tracepointId = tpid;
     advance_chunk(sizeof(BeginMessage));
 
     systrace_debug();
@@ -225,12 +259,14 @@ void systrace_duration_end(const char *module, const char *tracepoint)
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t tpid = getStringId(tracepoint);
+
     ensure_chunk(sizeof(EndMessage) + 1);
     *shm_ptr = 'E';
     advance_chunk(1);
     EndMessage *m = (EndMessage*)shm_ptr;
     m->microseconds = getMicroseconds();
-    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->tracepointId = tpid;
     advance_chunk(sizeof(EndMessage));
 
     systrace_debug();
@@ -241,12 +277,14 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t tpid = getStringId(tracepoint);
+
     ensure_chunk(sizeof(CounterMessage) + 1);
     *shm_ptr = 'C';
     advance_chunk(1);
     CounterMessage *m = (CounterMessage*)shm_ptr;
     m->microseconds = getMicroseconds();
-    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->tracepointId = tpid;
     m->value = value;
     m->id = id;
     advance_chunk(sizeof(CounterMessage));
@@ -259,12 +297,14 @@ void systrace_async_begin(const char *module, const char *tracepoint, const void
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t tpid = getStringId(tracepoint);
+
     ensure_chunk(sizeof(AsyncBeginMessage) + 1);
     *shm_ptr = 'b';
     advance_chunk(1);
     AsyncBeginMessage *m = (AsyncBeginMessage*)shm_ptr;
     m->microseconds = getMicroseconds();
-    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->tracepointId = tpid;
     m->cookie = (intptr_t)cookie;
     advance_chunk(sizeof(AsyncBeginMessage));
 
@@ -276,12 +316,14 @@ void systrace_async_end(const char *module, const char *tracepoint, const void *
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t tpid = getStringId(tracepoint);
+
     ensure_chunk(sizeof(AsyncEndMessage) + 1);
     *shm_ptr = 'e';
     advance_chunk(1);
     AsyncEndMessage *m = (AsyncEndMessage*)shm_ptr;
     m->microseconds = getMicroseconds();
-    strncpy(m->tracepoint, tracepoint, MAX_TRACEPOINT_LENGTH);
+    m->tracepointId = tpid;
     m->cookie = (intptr_t)cookie;
     advance_chunk(sizeof(AsyncEndMessage));
 
