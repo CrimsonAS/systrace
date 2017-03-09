@@ -35,7 +35,8 @@ enum class MessageType : uint8_t
     EndMessage = 3,
     AsyncBeginMessage = 4,
     AsyncEndMessage = 5,
-    CounterMessage = 6
+    CounterMessage = 6,
+    CounterMessageWithId = 7
 };
 
 struct ChunkHeader
@@ -84,12 +85,15 @@ struct AsyncEndMessage : public BaseMessage
     uint64_t cookie;
 };
 
-// ### specialize to remove the need to specify id if not required
 struct CounterMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint64_t tracepointId;
     int value;
+};
+
+struct CounterMessageWithId : public CounterMessage
+{
     int id;
 };
 

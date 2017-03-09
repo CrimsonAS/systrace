@@ -289,14 +289,24 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
 
     uint64_t tpid = getStringId(tracepoint);
 
-    ensure_chunk(sizeof(CounterMessage));
-    CounterMessage *m = (CounterMessage*)shm_ptr;
-    m->messageType = MessageType::CounterMessage;
-    m->microseconds = getMicroseconds();
-    m->tracepointId = tpid;
-    m->value = value;
-    m->id = id;
-    advance_chunk(sizeof(CounterMessage));
+    if (id == -1) {
+        ensure_chunk(sizeof(CounterMessage));
+        CounterMessage *m = (CounterMessage*)shm_ptr;
+        m->messageType = MessageType::CounterMessage;
+        m->microseconds = getMicroseconds();
+        m->tracepointId = tpid;
+        m->value = value;
+        advance_chunk(sizeof(CounterMessage));
+    } else {
+        ensure_chunk(sizeof(CounterMessageWithId));
+        CounterMessageWithId *m = (CounterMessageWithId*)shm_ptr;
+        m->messageType = MessageType::CounterMessageWithId;
+        m->microseconds = getMicroseconds();
+        m->tracepointId = tpid;
+        m->value = value;
+        m->id = id;
+        advance_chunk(sizeof(CounterMessageWithId));
+    }
 
     systrace_debug();
 }
