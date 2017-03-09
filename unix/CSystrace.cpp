@@ -90,7 +90,8 @@ static void submit_chunk()
 
     char buf[1024];
     int blen = sprintf(buf, "%s\n", current_chunk_name);
-    printf("TID %d sending %s", gettid(), buf);
+    if (0) // left for debug purposes
+        printf("TID %d sending %s", gettid(), buf);
     int ret = write(traced_fd, buf, blen);
     if (ret == -1) {
         // ### we also need to ignore SIGPIPE or clients will die if traced does.
