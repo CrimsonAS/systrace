@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <time.h>
 #include <sys/time.h>
 #include <assert.h>
 #include <stdio.h>
@@ -103,6 +104,12 @@ static void submit_chunk()
 // ### this needs to be thread safe
 static int allocatedChunkCount = 0;
 
+// When the trace started (when systrace_init was called).
+// Do not modify this outside of systrace_init! It is read from multiple
+// threads.
+static struct timespec originalTp;
+
+
 static void systrace_debug()
 {
     static thread_local bool debugging = false;
@@ -166,6 +173,11 @@ static void ensure_chunk(int mlen)
 
 __attribute__((constructor)) void systrace_init()
 {
+    if (clock_gettime(CLOCK_MONOTONIC, &originalTp) == -1) {
+        perror("Can't get time");
+        abort();
+    }
+
     // ### cleanup hack
     for (int i = 0; i < 9999; ++i) {
         char buf[1024];
@@ -209,17 +221,16 @@ int systrace_should_trace(const char *module)
     return 1;
 }
 
-static uint64_t getBareMicroseconds()
-{
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return tv.tv_sec * 1000000 + tv.tv_usec;
-}
-static uint64_t originalMicroseconds = getBareMicroseconds();
 static uint64_t getMicroseconds()
 {
-    // ### use monotonic time instead
-    return getBareMicroseconds() - originalMicroseconds;
+    struct timespec tp;
+    if (clock_gettime(CLOCK_MONOTONIC, &tp) == -1) {
+        perror("Can't get time");
+        abort();
+    }
+
+    return (tp.tv_sec - originalTp.tv_sec) * 1000000 +
+           (tp.tv_nsec / 1000) - (originalTp.tv_nsec / 1000);
 }
 
 // ### should make use of process id, thread id, and maybe some uniqueness too
