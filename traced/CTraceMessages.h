@@ -26,47 +26,65 @@
 
 #define TRACED_PROTOCOL_VERSION 256
 
+enum class MessageType : uint8_t
+{
+    NoMessage = 0,
+    RegisterStringMessage = 1,
+    BeginMessage = 2,
+    EndMessage = 3,
+    AsyncBeginMessage = 4,
+    AsyncEndMessage = 5,
+    CounterMessage = 6
+};
+
 struct ChunkHeader
 {
+    // ### consider adding a message type to help identify a malformed chunk
     int version;
     int pid;
     int tid;
 };
 
-struct RegisterStringMessage
+struct BaseMessage
+{
+    MessageType messageType;
+};
+
+struct RegisterStringMessage : public BaseMessage
 {
     uint64_t id;
     uint8_t length;
     char stringData; // and it follows on for length bytes
 };
 
-struct BeginMessage
+struct BeginMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint64_t tracepointId;
 };
 
-struct EndMessage
+struct EndMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint64_t tracepointId;
 };
 
-struct AsyncBeginMessage
-{
-    uint64_t microseconds;
-    uint64_t tracepointId;
-    intptr_t cookie;
-};
-
-struct AsyncEndMessage
+struct AsyncBeginMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint64_t tracepointId;
     intptr_t cookie;
 };
 
-struct CounterMessage
+struct AsyncEndMessage : public BaseMessage
+{
+    uint64_t microseconds;
+    uint64_t tracepointId;
+    intptr_t cookie;
+};
+
+// ### specialize to remove the need to specify id if not required
+struct CounterMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint64_t tracepointId;

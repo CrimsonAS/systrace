@@ -99,9 +99,9 @@ bool TraceClient::processChunk(const char *name)
     }
 
     while (1) {
-        char c = *ptr++;
-        switch (c) {
-        case 'r': {
+        MessageType mtype = (MessageType)*ptr;
+        switch (mtype) {
+        case MessageType::RegisterStringMessage: {
             // String registration
             RegisterStringMessage *m = (RegisterStringMessage*)ptr;
             std::string s(&m->stringData, m->length);
@@ -109,19 +109,19 @@ bool TraceClient::processChunk(const char *name)
             ptr += sizeof(RegisterStringMessage) + m->length;
             break;
         }
-        case 'B': {
+        case MessageType::BeginMessage: {
             BeginMessage *m = (BeginMessage*)ptr;
             fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(BeginMessage);
             break;
         }
-        case 'E': {
+        case MessageType::EndMessage: {
             EndMessage *m = (EndMessage*)ptr;
             fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(EndMessage);
             break;
         }
-        case 'C': {
+        case MessageType::CounterMessage: {
             CounterMessage *m = (CounterMessage*)ptr;
             if (m->id == -1)
                 fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), getString(m->tracepointId), m->value);
@@ -130,23 +130,23 @@ bool TraceClient::processChunk(const char *name)
             ptr += sizeof(CounterMessage);
             break;
         }
-        case 'b': {
+        case MessageType::AsyncBeginMessage: {
             AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
             fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncBeginMessage);
             break;
         }
-        case 'e': {
+        case MessageType::AsyncEndMessage: {
             AsyncEndMessage *m = (AsyncEndMessage*)ptr;
             fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncEndMessage);
             break;
         }
-        case '\0':
+        case MessageType::NoMessage:
             goto out;
             break;
         default:
-            fprintf(stderr, "Unknown token %c\n", c);
+            fprintf(stderr, "Unknown token %u\n", (uint)mtype);
             abort();
         }
     }
