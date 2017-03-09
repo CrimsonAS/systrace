@@ -42,7 +42,8 @@
 // Information about SHM chunks
 const int ShmChunkSize = 1024 * 10;
 static thread_local int shm_fd = -1;
-static thread_local char *shm_ptr = 0;
+static thread_local char *shmInitialPtr = 0;
+static thread_local char *shmPtr = 0;
 static thread_local char *current_chunk_name = 0;
 
 // How much of the SHM chunk for this thread is left, in bytes?
@@ -70,7 +71,7 @@ static int gettid()
  */
 static void advance_chunk(int len)
 {
-    shm_ptr += len;
+    shmPtr += len;
     remainingChunkSize -= len;
     assert(remainingChunkSize >= 0);
 }
@@ -84,9 +85,10 @@ static void submit_chunk()
         return;
 
     shutdown(shm_fd, SHUT_WR);
+    munmap(shmInitialPtr, ShmChunkSize);
     close(shm_fd);
     shm_fd = -1;
-    shm_ptr = 0;
+    shmPtr = 0;
 
     char buf[1024];
     int blen = sprintf(buf, "%s\n", current_chunk_name);
@@ -161,14 +163,14 @@ static void ensure_chunk(int mlen)
         perror("Can't ftruncate SHM!");
         abort();
     }
-    shm_ptr = (char*)mmap(0, ShmChunkSize, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (shm_ptr == MAP_FAILED) {
+    shmPtr = (char*)mmap(0, ShmChunkSize, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (shmPtr == MAP_FAILED) {
         perror("Can't map SHM!");
         abort();
     }
     remainingChunkSize = ShmChunkSize;
 
-    ChunkHeader *h = (ChunkHeader*)shm_ptr;
+    ChunkHeader *h = (ChunkHeader*)shmPtr;
     h->magic = TRACED_PROTOCOL_MAGIC;
     h->version = TRACED_PROTOCOL_VERSION;
     h->pid = getpid();
@@ -243,7 +245,7 @@ static uint64_t getStringId(const char *string)
         int slen = strlen(string);
         assert(slen < ShmChunkSize / 100); // 102 characters, assuming 10kb
         ensure_chunk(sizeof(RegisterStringMessage) + slen);
-        RegisterStringMessage *m = (RegisterStringMessage*)shm_ptr;
+        RegisterStringMessage *m = (RegisterStringMessage*)shmPtr;
         m->messageType = MessageType::RegisterStringMessage;
         m->id = nid;
         m->length = slen;
@@ -266,7 +268,7 @@ void systrace_duration_begin(const char *module, const char *tracepoint)
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(BeginMessage));
-    BeginMessage *m = (BeginMessage*)shm_ptr;
+    BeginMessage *m = (BeginMessage*)shmPtr;
     m->messageType = MessageType::BeginMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
@@ -285,7 +287,7 @@ void systrace_duration_end(const char *module, const char *tracepoint)
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(EndMessage));
-    EndMessage *m = (EndMessage*)shm_ptr;
+    EndMessage *m = (EndMessage*)shmPtr;
     m->messageType = MessageType::EndMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
@@ -305,7 +307,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
 
     if (id == -1) {
         ensure_chunk(sizeof(CounterMessage));
-        CounterMessage *m = (CounterMessage*)shm_ptr;
+        CounterMessage *m = (CounterMessage*)shmPtr;
         m->messageType = MessageType::CounterMessage;
         m->microseconds = getMicroseconds();
         m->categoryId = modid;
@@ -314,7 +316,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
         advance_chunk(sizeof(CounterMessage));
     } else {
         ensure_chunk(sizeof(CounterMessageWithId));
-        CounterMessageWithId *m = (CounterMessageWithId*)shm_ptr;
+        CounterMessageWithId *m = (CounterMessageWithId*)shmPtr;
         m->messageType = MessageType::CounterMessageWithId;
         m->microseconds = getMicroseconds();
         m->categoryId = modid;
@@ -336,7 +338,7 @@ void systrace_async_begin(const char *module, const char *tracepoint, const void
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(AsyncBeginMessage));
-    AsyncBeginMessage *m = (AsyncBeginMessage*)shm_ptr;
+    AsyncBeginMessage *m = (AsyncBeginMessage*)shmPtr;
     m->messageType = MessageType::AsyncBeginMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
@@ -356,7 +358,7 @@ void systrace_async_end(const char *module, const char *tracepoint, const void *
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(AsyncEndMessage));
-    AsyncEndMessage *m = (AsyncEndMessage*)shm_ptr;
+    AsyncEndMessage *m = (AsyncEndMessage*)shmPtr;
     m->messageType = MessageType::AsyncEndMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
