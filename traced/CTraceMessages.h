@@ -62,18 +62,21 @@ struct RegisterStringMessage : public BaseMessage
 struct BeginMessage : public BaseMessage
 {
     uint64_t microseconds;
+    uint16_t categoryId;
     uint64_t tracepointId;
 };
 
 struct EndMessage : public BaseMessage
 {
     uint64_t microseconds;
+    uint16_t categoryId;
     uint64_t tracepointId;
 };
 
 struct AsyncBeginMessage : public BaseMessage
 {
     uint64_t microseconds;
+    uint16_t categoryId;
     uint64_t tracepointId;
     uint64_t cookie;
 };
@@ -81,6 +84,7 @@ struct AsyncBeginMessage : public BaseMessage
 struct AsyncEndMessage : public BaseMessage
 {
     uint64_t microseconds;
+    uint16_t categoryId;
     uint64_t tracepointId;
     uint64_t cookie;
 };
@@ -88,6 +92,7 @@ struct AsyncEndMessage : public BaseMessage
 struct CounterMessage : public BaseMessage
 {
     uint64_t microseconds;
+    uint16_t categoryId;
     uint64_t tracepointId;
     int value;
 };

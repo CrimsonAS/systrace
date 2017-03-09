@@ -253,12 +253,14 @@ void systrace_duration_begin(const char *module, const char *tracepoint)
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t modid = getStringId(module);
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(BeginMessage));
     BeginMessage *m = (BeginMessage*)shm_ptr;
     m->messageType = MessageType::BeginMessage;
     m->microseconds = getMicroseconds();
+    m->categoryId = modid;
     m->tracepointId = tpid;
     advance_chunk(sizeof(BeginMessage));
 
@@ -270,12 +272,14 @@ void systrace_duration_end(const char *module, const char *tracepoint)
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t modid = getStringId(module);
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(EndMessage));
     EndMessage *m = (EndMessage*)shm_ptr;
     m->messageType = MessageType::EndMessage;
     m->microseconds = getMicroseconds();
+    m->categoryId = modid;
     m->tracepointId = tpid;
     advance_chunk(sizeof(EndMessage));
 
@@ -287,6 +291,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t modid = getStringId(module);
     uint64_t tpid = getStringId(tracepoint);
 
     if (id == -1) {
@@ -294,6 +299,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
         CounterMessage *m = (CounterMessage*)shm_ptr;
         m->messageType = MessageType::CounterMessage;
         m->microseconds = getMicroseconds();
+        m->categoryId = modid;
         m->tracepointId = tpid;
         m->value = value;
         advance_chunk(sizeof(CounterMessage));
@@ -302,6 +308,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
         CounterMessageWithId *m = (CounterMessageWithId*)shm_ptr;
         m->messageType = MessageType::CounterMessageWithId;
         m->microseconds = getMicroseconds();
+        m->categoryId = modid;
         m->tracepointId = tpid;
         m->value = value;
         m->id = id;
@@ -316,12 +323,14 @@ void systrace_async_begin(const char *module, const char *tracepoint, const void
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t modid = getStringId(module);
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(AsyncBeginMessage));
     AsyncBeginMessage *m = (AsyncBeginMessage*)shm_ptr;
     m->messageType = MessageType::AsyncBeginMessage;
     m->microseconds = getMicroseconds();
+    m->categoryId = modid;
     m->tracepointId = tpid;
     m->cookie = (intptr_t)cookie;
     advance_chunk(sizeof(AsyncBeginMessage));
@@ -334,12 +343,14 @@ void systrace_async_end(const char *module, const char *tracepoint, const void *
     if (!systrace_should_trace(module))
         return;
 
+    uint64_t modid = getStringId(module);
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(AsyncEndMessage));
     AsyncEndMessage *m = (AsyncEndMessage*)shm_ptr;
     m->messageType = MessageType::AsyncEndMessage;
     m->microseconds = getMicroseconds();
+    m->categoryId = modid;
     m->tracepointId = tpid;
     m->cookie = (intptr_t)cookie;
     advance_chunk(sizeof(AsyncEndMessage));

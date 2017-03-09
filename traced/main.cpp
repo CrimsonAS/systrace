@@ -127,7 +127,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::BeginMessage: {
             assert(remainingBytes >= sizeof(BeginMessage));
             BeginMessage *m = (BeginMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"B\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->categoryId), getString(m->tracepointId));
             ptr += sizeof(BeginMessage);
             remainingBytes -= sizeof(BeginMessage);
             break;
@@ -135,7 +135,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::EndMessage: {
             assert(remainingBytes >= sizeof(EndMessage));
             EndMessage *m = (EndMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"E\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->categoryId), getString(m->tracepointId));
             ptr += sizeof(EndMessage);
             remainingBytes -= sizeof(EndMessage);
             break;
@@ -143,7 +143,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::CounterMessage: {
             assert(remainingBytes >= sizeof(CounterMessage));
             CounterMessage *m = (CounterMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), getString(m->tracepointId), m->value);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessage);
             remainingBytes -= sizeof(CounterMessage);
             break;
@@ -151,7 +151,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::CounterMessageWithId: {
             assert(remainingBytes >= sizeof(CounterMessageWithId));
             CounterMessageWithId *m = (CounterMessageWithId*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessageWithId);
             remainingBytes -= sizeof(CounterMessageWithId);
             break;
@@ -159,7 +159,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::AsyncBeginMessage: {
             assert(remainingBytes >= sizeof(AsyncBeginMessage));
             AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"b\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncBeginMessage);
             remainingBytes -= sizeof(AsyncBeginMessage);
             break;
@@ -167,7 +167,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::AsyncEndMessage: {
             assert(remainingBytes >= sizeof(AsyncEndMessage));
             AsyncEndMessage *m = (AsyncEndMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"e\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncEndMessage);
             remainingBytes -= sizeof(AsyncEndMessage);
             break;
@@ -183,7 +183,7 @@ bool TraceClient::processChunk(const char *name)
 
 #if 0
             fprintf(traceOutputFile, 
-            "{\"pid\":%" PRIu64 ",\"tid\":0,\"ts\":%llu,\"ph\":\"v\",\"cat\":\"disabled-by-default-memory-infra\",\"name\":\"periodic_interval\",\"args\":{\"dumps\":{\"allocators\":{", h->pid, m->microseconds);
+            "{\"pid\":%" PRIu64 ",\"tid\":0,\"ts\":%llu,\"ph\":\"v\",\"cat\":\"%s\",\"name\":\"periodic_interval\",\"args\":{\"dumps\":{\"allocators\":{", h->pid, m->microseconds, getString(m->categoryId));
                 fprintf(traceOutputFile, "\"RootCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"801c8c513b1eb102\"},", rand());
                 fprintf(traceOutputFile, "\"AnotherRootCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"801c8c513b1eb102\"},", rand());
                 fprintf(traceOutputFile, "\"AnotherRootCategory/SubCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"806a715752927f85\"}", rand());
