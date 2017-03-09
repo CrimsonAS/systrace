@@ -149,7 +149,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::CounterMessage: {
             assert(remainingBytes >= sizeof(CounterMessage));
             CounterMessage *m = (CounterMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), getString(m->tracepointId), m->value);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessage);
             remainingBytes -= sizeof(CounterMessage);
             break;
@@ -157,7 +157,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::CounterMessageWithId: {
             assert(remainingBytes >= sizeof(CounterMessageWithId));
             CounterMessageWithId *m = (CounterMessageWithId*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":%" PRIu64 ",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessageWithId);
             remainingBytes -= sizeof(CounterMessageWithId);
             break;

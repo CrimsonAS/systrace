@@ -95,12 +95,12 @@ struct CounterMessage : public BaseMessage
     uint64_t microseconds;
     uint16_t categoryId;
     uint64_t tracepointId;
-    int value;
+    uint64_t value;
 };
 
 struct CounterMessageWithId : public CounterMessage
 {
-    int id;
+    uint64_t id;
 };
 
 
