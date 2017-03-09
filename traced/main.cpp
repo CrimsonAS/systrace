@@ -93,6 +93,12 @@ bool TraceClient::processChunk(const char *name)
         return false;
     }
 
+    // Immediately unlink
+    if (shm_unlink(name) == -1) {
+        fprintf(stderr, "shm_unlink: %s\n", strerror(errno));
+        abort();
+    }
+
     uint64_t remainingBytes = ShmChunkSize;
     initialPtr = ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr == MAP_FAILED) {
@@ -198,11 +204,6 @@ bool TraceClient::processChunk(const char *name)
 out:
     munmap(initialPtr, ShmChunkSize);
 
-    if (shm_unlink(name) == -1) {
-        fprintf(stderr, "shm_unlink: %s\n", strerror(errno));
-        abort();
-    }
-
     return true;
 }
 
@@ -242,8 +243,8 @@ void sigintHandler(int signo)
 
 int main(int argc, char **argv) 
 {
-    // ### cleanup hack
-    for (int i = 0; i < 99999; ++i) {
+    // Unlink all chunks on startup to prevent leaks.
+    for (int i = 0; i < TRACED_MAX_SHM_CHUNKS; ++i) {
         char buf[1024];
         sprintf(buf, "tracechunk-%d", i);
         shm_unlink(buf);

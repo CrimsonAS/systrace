@@ -21,6 +21,7 @@
  * SOFTWARE.
  */
 
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -44,7 +45,7 @@ const int ShmChunkSize = 1024 * 10;
 static thread_local int shm_fd = -1;
 static thread_local char *shmInitialPtr = 0;
 static thread_local char *shmPtr = 0;
-static thread_local char *current_chunk_name = 0;
+static thread_local char *currentChunkName = 0;
 
 // How much of the SHM chunk for this thread is left, in bytes?
 static thread_local int remainingChunkSize;
@@ -91,25 +92,18 @@ static void submit_chunk()
     shmPtr = 0;
 
     char buf[1024];
-    int blen = sprintf(buf, "%s\n", current_chunk_name);
+    int blen = sprintf(buf, "%s\n", currentChunkName);
     if (0) // left for debug purposes
         printf("TID %d sending %s", gettid(), buf);
     int ret = write(traced_fd, buf, blen);
     if (ret == -1) {
         // ### we also need to ignore SIGPIPE or clients will die if traced does.
         perror("Can't write to traced! Giving up!");
-        shm_unlink(current_chunk_name);
+        shm_unlink(currentChunkName);
         close(traced_fd);
         traced_fd = -1;
     }
-
-    free((void*)current_chunk_name);
-    current_chunk_name = 0;
 }
-
-// How many SHM chunks have we allocated?
-// ### this needs to be thread safe
-static int allocatedChunkCount = 0;
 
 // When the trace started (when systrace_init was called).
 // Do not modify this outside of systrace_init! It is read from multiple
@@ -150,15 +144,28 @@ static void ensure_chunk(int mlen)
         submit_chunk();
     }
 
-    // ### linux via /dev/shm or memfd_create
-    // ### multiple processes!
-    asprintf(&current_chunk_name, "tracechunk-%d", allocatedChunkCount++);
-    shm_unlink(current_chunk_name);
-    shm_fd = shm_open(current_chunk_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+    // ### linux via /dev/shm or memfd_create?
+    int nextShmId = 0;
+    while (shm_fd == -1 && nextShmId < TRACED_MAX_SHM_CHUNKS) {
+        if (!currentChunkName)
+            asprintf(&currentChunkName, "tracechunk-%d", nextShmId++);
+
+        shm_fd = shm_open(currentChunkName, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+        if (shm_fd != -1) {
+            break; // we won!
+        } else {
+            // try again. either something is using that chunk name, or traced
+            // hasn't released it for us to reuse yet.
+            free(currentChunkName);
+            currentChunkName = 0;
+        }
+    }
+
     if (shm_fd == -1) {
-        perror("Can't open SHM!");
+        fprintf(stderr, "Something is seriously screwed. Can't find any free SHM chunk, tried all %d\n", TRACED_MAX_SHM_CHUNKS);
         abort();
     }
+
     if (ftruncate(shm_fd, ShmChunkSize) == -1) {
         perror("Can't ftruncate SHM!");
         abort();
