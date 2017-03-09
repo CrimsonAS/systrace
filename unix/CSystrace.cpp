@@ -93,9 +93,13 @@ static void submit_chunk()
     printf("TID %d sending %s", gettid(), buf);
     int ret = write(traced_fd, buf, blen);
     if (ret == -1) {
-        perror("Can't write to traced!");
+        // ### we also need to ignore SIGPIPE or clients will die if traced does.
+        perror("Can't write to traced! Giving up!");
+        shm_unlink(current_chunk_name);
+        close(traced_fd);
+        traced_fd = -1;
     }
-    
+
     free((void*)current_chunk_name);
     current_chunk_name = 0;
 }
