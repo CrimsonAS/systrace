@@ -178,13 +178,6 @@ __attribute__((constructor)) void systrace_init()
         abort();
     }
 
-    // ### cleanup hack
-    for (int i = 0; i < 9999; ++i) {
-        char buf[1024];
-        sprintf(buf, "tracechunk-%d", i);
-        shm_unlink(buf);
-    }
-
     if (getenv("TRACED") == NULL) {
         traced_fd = open("/tmp/traced", O_WRONLY);
 

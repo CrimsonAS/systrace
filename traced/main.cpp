@@ -242,6 +242,13 @@ void sigintHandler(int signo)
 
 int main(int argc, char **argv) 
 {
+    // ### cleanup hack
+    for (int i = 0; i < 99999; ++i) {
+        char buf[1024];
+        sprintf(buf, "tracechunk-%d", i);
+        shm_unlink(buf);
+    }
+
     struct sigaction act;
     act.sa_handler = &sigintHandler;
     sigaction(SIGINT, &act, NULL);
