@@ -21,6 +21,8 @@
  * SOFTWARE.
  */
 
+#include <signal.h>
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +48,7 @@
 #include "CTraceMessages.h"
 
 const int ShmChunkSize = 1024 * 10;
+static FILE *traceOutputFile;
 
 class TraceClient : public QObject
 {
@@ -111,34 +114,34 @@ bool TraceClient::processChunk(const char *name)
         }
         case MessageType::BeginMessage: {
             BeginMessage *m = (BeginMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
+            fprintf(traceOutputFile, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(BeginMessage);
             break;
         }
         case MessageType::EndMessage: {
             EndMessage *m = (EndMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
+            fprintf(traceOutputFile, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(EndMessage);
             break;
         }
         case MessageType::CounterMessage: {
             CounterMessage *m = (CounterMessage*)ptr;
             if (m->id == -1)
-                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), getString(m->tracepointId), m->value);
+                fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), getString(m->tracepointId), m->value);
             else
-                fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
+                fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessage);
             break;
         }
         case MessageType::AsyncBeginMessage: {
             AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
+            fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncBeginMessage);
             break;
         }
         case MessageType::AsyncEndMessage: {
             AsyncEndMessage *m = (AsyncEndMessage*)ptr;
-            fprintf(stdout, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
+            fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncEndMessage);
             break;
         }
@@ -151,7 +154,7 @@ bool TraceClient::processChunk(const char *name)
         }
     }
 
-    fflush(stdout);
+    fflush(traceOutputFile);
 
 out:
 
@@ -189,13 +192,34 @@ void TraceClient::readControlSocket()
         }
         fprintf(stderr, "Done chunk %s\n", abuf.constData());
     }
+}
 
-    printf("\n\n\n\n");
+void sigintHandler(int signo)
+{
+    assert(signo == SIGINT);
+    // Force a normal exit so we flush the file
+    qApp->exit();
 }
 
 int main(int argc, char **argv) 
 {
+    struct sigaction act;
+    act.sa_handler = &sigintHandler;
+    sigaction(SIGINT, &act, NULL);
+
     QCoreApplication app(argc, argv);
+
+    traceOutputFile = stdout;
+
+    for (int i = 0; i < argc; ++i) {
+        if (strcmp(argv[i], "-o")  == 0 && i < argc - 1) {
+            traceOutputFile = fopen(argv[i+1], "w");
+            if (traceOutputFile == NULL) {
+                perror("Can't open trace file");
+                exit(-1);
+            }
+        }
+    }
 
     struct sockaddr_un local;
     int s = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -234,8 +258,10 @@ int main(int argc, char **argv)
             &QSocketNotifier::activated, tc, &TraceClient::readControlSocket);
     });
 
-    printf("[\n");
-    return app.exec();
+    fprintf(traceOutputFile, "[\n");
+    int ret = app.exec();
+    fclose(traceOutputFile);
+    return ret;
 }
 
 #include "main.moc"
