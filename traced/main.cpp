@@ -76,10 +76,14 @@ const char *TraceClient::getString(uint64_t id)
     return it->second.c_str();
 }
 
+// ### this function should become a little more robust and less sloppy.
+// * change asserts into runtime checks too
+// * remove abort calls, instead, clean up safely and disconnect the client.
 bool TraceClient::processChunk(const char *name)
 {
     int shm_fd;
     char *ptr;
+    char *initialPtr;
 
     shm_fd = shm_open(name, O_RDONLY, S_IRUSR | S_IWUSR);
     if (shm_fd == -1) {
@@ -87,7 +91,8 @@ bool TraceClient::processChunk(const char *name)
         return false;
     }
 
-    ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
+    uint64_t remainingBytes = ShmChunkSize;
+    initialPtr = ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr == MAP_FAILED) {
         fprintf(stderr, "mmap %s\n", strerror(errno));
         abort();
@@ -95,9 +100,11 @@ bool TraceClient::processChunk(const char *name)
 
     ChunkHeader *h = (ChunkHeader*)ptr;
     ptr += sizeof(ChunkHeader);
+    remainingBytes -= sizeof(ChunkHeader);
 
     if (h->version != TRACED_PROTOCOL_VERSION) {
         fprintf(stderr, "malformed chunk! version %d\n", h->version);
+        munmap(initialPtr, ShmChunkSize);
         return true;
     }
 
@@ -106,43 +113,56 @@ bool TraceClient::processChunk(const char *name)
         switch (mtype) {
         case MessageType::RegisterStringMessage: {
             // String registration
+            assert(remainingBytes >= sizeof(RegisterStringMessage)); // can we read the header?
             RegisterStringMessage *m = (RegisterStringMessage*)ptr;
+            assert(remainingBytes >= sizeof(RegisterStringMessage) + m->length); // and the whole string?
             std::string s(&m->stringData, m->length);
             registeredStrings[m->id] = s;
             ptr += sizeof(RegisterStringMessage) + m->length;
+            remainingBytes -= sizeof(RegisterStringMessage) + m->length;
             break;
         }
         case MessageType::BeginMessage: {
+            assert(remainingBytes >= sizeof(BeginMessage));
             BeginMessage *m = (BeginMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"B\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(BeginMessage);
+            remainingBytes -= sizeof(BeginMessage);
             break;
         }
         case MessageType::EndMessage: {
+            assert(remainingBytes >= sizeof(EndMessage));
             EndMessage *m = (EndMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%d,\"tid\":%d,\"ts\":%llu,\"ph\":\"E\",\"cat\":\"\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->tracepointId));
             ptr += sizeof(EndMessage);
+            remainingBytes -= sizeof(EndMessage);
             break;
         }
         case MessageType::CounterMessage: {
+            assert(remainingBytes >= sizeof(CounterMessage));
             CounterMessage *m = (CounterMessage*)ptr;
             if (m->id == -1)
                 fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), getString(m->tracepointId), m->value);
             else
                 fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"C\",\"cat\":\"\",\"name\":\"%s\",\"id\":%d,\"args\":{\"%s\":%d}},\n", h->pid, m->microseconds, getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessage);
+            remainingBytes -= sizeof(CounterMessage);
             break;
         }
         case MessageType::AsyncBeginMessage: {
+            assert(remainingBytes >= sizeof(AsyncBeginMessage));
             AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"b\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncBeginMessage);
+            remainingBytes -= sizeof(AsyncBeginMessage);
             break;
         }
         case MessageType::AsyncEndMessage: {
+            assert(remainingBytes >= sizeof(AsyncEndMessage));
             AsyncEndMessage *m = (AsyncEndMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%d,\"ts\":%llu,\"ph\":\"e\",\"cat\":\"\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncEndMessage);
+            remainingBytes -= sizeof(AsyncEndMessage);
             break;
         }
         case MessageType::NoMessage:
@@ -157,6 +177,7 @@ bool TraceClient::processChunk(const char *name)
     fflush(traceOutputFile);
 
 out:
+    munmap(initialPtr, ShmChunkSize);
 
     if (shm_unlink(name) == -1) {
         fprintf(stderr, "shm_unlink: %s\n", strerror(errno));
@@ -178,7 +199,6 @@ void TraceClient::readControlSocket()
     }
 
     buf += QByteArray(cmd, lcmd);
-    qDebug() << buf;
     QList<QByteArray> bufs = buf.split('\n');
     for (const QByteArray &abuf : bufs) {
         if (abuf.isEmpty()) {
