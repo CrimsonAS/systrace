@@ -157,6 +157,7 @@ static void ensure_chunk(int mlen)
     remainingChunkSize = ShmChunkSize;
 
     ChunkHeader *h = (ChunkHeader*)shm_ptr;
+    h->magic = TRACED_PROTOCOL_MAGIC;
     h->version = TRACED_PROTOCOL_VERSION;
     h->pid = getpid();
     h->tid = gettid();

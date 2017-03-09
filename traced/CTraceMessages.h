@@ -24,6 +24,7 @@
 #ifndef CTRACEMESSAGES_H
 #define CTRACEMESSAGES_H
 
+#define TRACED_PROTOCOL_MAGIC 0xDEADBEEFBAAD
 #define TRACED_PROTOCOL_VERSION 256
 
 enum class MessageType : uint8_t
@@ -39,10 +40,10 @@ enum class MessageType : uint8_t
 
 struct ChunkHeader
 {
-    // ### consider adding a message type to help identify a malformed chunk
-    int version;
-    int pid;
-    int tid;
+    uint64_t magic;
+    uint16_t version;
+    uint64_t pid;
+    uint64_t tid;
 };
 
 struct BaseMessage
@@ -73,14 +74,14 @@ struct AsyncBeginMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint64_t tracepointId;
-    intptr_t cookie;
+    uint64_t cookie;
 };
 
 struct AsyncEndMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint64_t tracepointId;
-    intptr_t cookie;
+    uint64_t cookie;
 };
 
 // ### specialize to remove the need to specify id if not required
