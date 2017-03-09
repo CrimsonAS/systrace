@@ -46,7 +46,7 @@ static thread_local char *current_chunk_name = 0;
 static thread_local int remaining_chunk_size;
 
 // FD to communicate with traced
-static int traced_fd = 0;
+static int traced_fd = -1;
 
 // Each thread registers unique strings as it comes across them here and sends a
 // registration message to traced.
