@@ -79,6 +79,9 @@ static void advance_chunk(int len)
 
 /*!
  * Send the current chunk to traced for processing.
+ *
+ * ### right now, this will not be called if a thread terminates abruptly.
+ * we should somehow monitor old, stale chunks and force-submit them.
  */
 static void submit_chunk()
 {
