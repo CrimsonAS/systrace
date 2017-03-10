@@ -128,6 +128,7 @@ static uint64_t getMicroseconds()
 
 static void systrace_debug()
 {
+#if 0
     static thread_local bool debugging = false;
     if (debugging)
         return;
@@ -145,6 +146,7 @@ static void systrace_debug()
         systrace_record_counter("systrace", "registeredStringCount", lastStringCount); // not thread-specific
     }
     debugging = false;
+#endif
 }
 
 /*!
