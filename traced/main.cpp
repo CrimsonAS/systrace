@@ -62,7 +62,8 @@ class TraceClient : public QObject
     Q_OBJECT
 
 public:
-    TraceClient(int f) : fd(f)
+    TraceClient(int f)
+        : fd(f), ptr(nullptr), remainingChunkSize(0)
     {
         qInfo() << "New process connected on " << fd;
     }
@@ -79,10 +80,15 @@ public:
 public slots:
     void readControlSocket();
 private:
+    bool advanceChunk(size_t len);
     bool processChunk(const char *name);
     const char *getString(uint64_t id);
 
     std::unordered_map<uint64_t, std::string> registeredStrings;
+
+    // Only valid while processing a chunk.
+    char *ptr;
+    size_t remainingChunkSize;
 };
 
 const char *TraceClient::getString(uint64_t id)
@@ -95,13 +101,28 @@ const char *TraceClient::getString(uint64_t id)
     return it->second.c_str();
 }
 
+bool TraceClient::advanceChunk(size_t len)
+{
+    assert(len > 0);
+    assert(len <= remainingChunkSize);
+
+    if (len > remainingChunkSize) {
+        qWarning() << "Advanced chunk too far for client " << this->fd;
+        this->deleteLater();
+        return false;
+    }
+
+    ptr += len;
+    remainingChunkSize -= len;
+    return true;
+}
+
 // ### this function should become a little more robust and less sloppy.
 // * change asserts into runtime checks too
 // * remove abort calls, instead, clean up safely and disconnect the client.
 bool TraceClient::processChunk(const char *name)
 {
     int shm_fd;
-    char *ptr;
     char *initialPtr;
 
     shm_fd = shm_open(name, O_RDONLY, S_IRUSR | S_IWUSR);
@@ -116,7 +137,7 @@ bool TraceClient::processChunk(const char *name)
         abort();
     }
 
-    uint64_t remainingBytes = ShmChunkSize;
+    remainingChunkSize = ShmChunkSize;
     initialPtr = ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr == MAP_FAILED) {
         qWarning() << "mmap: " << strerror(errno);
@@ -124,8 +145,9 @@ bool TraceClient::processChunk(const char *name)
     }
 
     ChunkHeader *h = (ChunkHeader*)ptr;
-    ptr += sizeof(ChunkHeader);
-    remainingBytes -= sizeof(ChunkHeader);
+    uint64_t processEpoch = 0;
+    if (!advanceChunk(sizeof(ChunkHeader)))
+        goto out;
 
     assert(h->magic == TRACED_PROTOCOL_MAGIC);
     assert(h->version == TRACED_PROTOCOL_VERSION);
@@ -142,75 +164,75 @@ bool TraceClient::processChunk(const char *name)
     // Process epoch is a relative time of when the process started relative to
     // us. We use this to offset the message times to make them make sense for
     // everyone.
-    uint64_t processEpoch = h->epoch - epoch;
+    processEpoch = h->epoch - epoch;
 
-    while (1) {
+    while (remainingChunkSize) {
         MessageType mtype = (MessageType)*ptr;
         switch (mtype) {
         case MessageType::RegisterStringMessage: {
             // String registration
-            assert(remainingBytes >= sizeof(RegisterStringMessage)); // can we read the header?
+            assert(remainingChunkSize >= sizeof(RegisterStringMessage)); // can we read the header?
             RegisterStringMessage *m = (RegisterStringMessage*)ptr;
-            assert(remainingBytes >= sizeof(RegisterStringMessage) + m->length); // and the whole string?
+            assert(remainingChunkSize >= sizeof(RegisterStringMessage) + m->length); // and the whole string?
             std::string s(&m->stringData, m->length);
             registeredStrings[m->id] = s;
-            ptr += sizeof(RegisterStringMessage) + m->length;
-            remainingBytes -= sizeof(RegisterStringMessage) + m->length;
+            if (!advanceChunk(sizeof(RegisterStringMessage) + m->length))
+                goto out;
             break;
         }
         case MessageType::BeginMessage: {
-            assert(remainingBytes >= sizeof(BeginMessage));
+            assert(remainingChunkSize >= sizeof(BeginMessage));
             BeginMessage *m = (BeginMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"B\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId));
-            ptr += sizeof(BeginMessage);
-            remainingBytes -= sizeof(BeginMessage);
+            if (!advanceChunk(sizeof(BeginMessage)))
+                goto out;
             break;
         }
         case MessageType::EndMessage: {
-            assert(remainingBytes >= sizeof(EndMessage));
+            assert(remainingChunkSize >= sizeof(EndMessage));
             EndMessage *m = (EndMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"E\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId));
-            ptr += sizeof(EndMessage);
-            remainingBytes -= sizeof(EndMessage);
+            if (!advanceChunk(sizeof(EndMessage)))
+                goto out;
             break;
         }
         case MessageType::CounterMessage: {
-            assert(remainingBytes >= sizeof(CounterMessage));
+            assert(remainingChunkSize >= sizeof(CounterMessage));
             CounterMessage *m = (CounterMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), getString(m->tracepointId), m->value);
-            ptr += sizeof(CounterMessage);
-            remainingBytes -= sizeof(CounterMessage);
+            if (!advanceChunk(sizeof(CounterMessage)))
+                goto out;
             break;
         }
         case MessageType::CounterMessageWithId: {
-            assert(remainingBytes >= sizeof(CounterMessageWithId));
+            assert(remainingChunkSize >= sizeof(CounterMessageWithId));
             CounterMessageWithId *m = (CounterMessageWithId*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":%" PRIu64 ",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
-            ptr += sizeof(CounterMessageWithId);
-            remainingBytes -= sizeof(CounterMessageWithId);
+            if (!advanceChunk(sizeof(CounterMessageWithId)))
+                goto out;
             break;
         }
         case MessageType::AsyncBeginMessage: {
-            assert(remainingBytes >= sizeof(AsyncBeginMessage));
+            assert(remainingChunkSize >= sizeof(AsyncBeginMessage));
             AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"b\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
-            ptr += sizeof(AsyncBeginMessage);
-            remainingBytes -= sizeof(AsyncBeginMessage);
+            if (!advanceChunk(sizeof(AsyncBeginMessage)))
+                goto out;
             break;
         }
         case MessageType::AsyncEndMessage: {
-            assert(remainingBytes >= sizeof(AsyncEndMessage));
+            assert(remainingChunkSize >= sizeof(AsyncEndMessage));
             AsyncEndMessage *m = (AsyncEndMessage*)ptr;
             fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"e\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
-            ptr += sizeof(AsyncEndMessage);
-            remainingBytes -= sizeof(AsyncEndMessage);
+            if (!advanceChunk(sizeof(AsyncEndMessage)))
+                goto out;
             break;
         }
         case MessageType::NoMessage:
             goto out;
             break;
         default:
-            qWarning() << "Unknown token %u", (uint)mtype;
+            qWarning() << "Unknown token " << (uint)mtype;
             this->deleteLater();
             goto out;
             break;
