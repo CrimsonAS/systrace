@@ -37,6 +37,8 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 
+#include <unordered_map>
+
 #include "CSystrace.h"
 #include "CTraceMessages.h"
 
@@ -55,8 +57,7 @@ static int traced_fd = -1;
 
 // Each thread registers unique strings as it comes across them here and sends a
 // registration message to traced.
-#include <unordered_map>
-static uint64_t currentStringId; // ### not thread-local! racey! fix registration
+static std::atomic<uint64_t> currentStringId;
 static thread_local std::unordered_map<const char *, uint64_t> registeredStrings;
 
 //gettid(); except that mac sucks
@@ -139,9 +140,9 @@ static void systrace_debug()
         systrace_record_counter("systrace",  "remainingChunkSize",  remainingChunkSize, gettid());
     }
     static uint64_t lastStringCount = 0;
-    if (lastStringCount != currentStringId) {
-        lastStringCount = currentStringId;
-        systrace_record_counter("systrace", "registeredStringCount", currentStringId); // not thread-specific
+    if (lastStringCount != currentStringId.load()) {
+        lastStringCount = currentStringId.load();
+        systrace_record_counter("systrace", "registeredStringCount", lastStringCount); // not thread-specific
     }
     debugging = false;
 }
@@ -250,7 +251,7 @@ static uint64_t getStringId(const char *string)
 {
     auto it = registeredStrings.find(string);
     if (it == registeredStrings.end()) {
-        uint64_t nid = currentStringId++;
+        uint64_t nid = currentStringId.fetch_add(1);
         registeredStrings[string] = nid;
 
         int slen = strlen(string);
