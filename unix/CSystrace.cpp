@@ -36,6 +36,10 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+// MAC
+#include <unistd.h> // syscall()
+#include <sys/syscall.h> // SYS_thread_selfid
+// ENDMAC
 
 #include <unordered_map>
 
@@ -61,9 +65,6 @@ static std::atomic<uint64_t> currentStringId;
 static thread_local std::unordered_map<const char *, uint64_t> registeredStrings;
 
 //gettid(); except that mac sucks
-#include <unistd.h> // syscall()
-#include <sys/syscall.h> // SYS_thread_selfid
-
 static int gettid()
 {
     return syscall(SYS_thread_selfid);
