@@ -40,6 +40,9 @@ enum class MessageType : uint8_t
     CounterMessageWithId = 7
 };
 
+// ### consider splitting ChunkHeader to a ProcessHeaderMessage and
+// ChunkHeaderMessage. pid & epoch should never change, so that's 8 bytes of
+// each cunk wasted at present.
 struct ChunkHeader
 {
     uint64_t magic;
