@@ -106,20 +106,20 @@ bool TraceClient::processChunk(const char *name)
 
     shm_fd = shm_open(name, O_RDONLY, S_IRUSR | S_IWUSR);
     if (shm_fd == -1) {
-        fprintf(stderr, "shm_open %s: %s\n", name, strerror(errno));
+        qWarning() << "shm_open: " << name << strerror(errno);
         return false;
     }
 
     // Immediately unlink
     if (shm_unlink(name) == -1) {
-        fprintf(stderr, "shm_unlink: %s\n", strerror(errno));
+        qWarning() << "shm_unlink: " << strerror(errno);
         abort();
     }
 
     uint64_t remainingBytes = ShmChunkSize;
     initialPtr = ptr = (char*)mmap(0, ShmChunkSize, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr == MAP_FAILED) {
-        fprintf(stderr, "mmap %s\n", strerror(errno));
+        qWarning() << "mmap: " << strerror(errno);
         abort();
     }
 
@@ -132,7 +132,9 @@ bool TraceClient::processChunk(const char *name)
     assert(h->epoch >= epoch);
 
     if (h->magic != TRACED_PROTOCOL_MAGIC || h->version != TRACED_PROTOCOL_VERSION || h->epoch < epoch) {
-        fprintf(stderr, "malformed chunk! magic %" PRIu64" version %d epoch %" PRIu64 "\n", h->magic, h->version, h->epoch);
+        qWarning() << "malformed chunk! magic " << h->magic
+                   << " version " << h->version
+                   << " epoch " << h->epoch;
         munmap(initialPtr, ShmChunkSize);
         return true;
     }
@@ -208,8 +210,10 @@ bool TraceClient::processChunk(const char *name)
             goto out;
             break;
         default:
-            fprintf(stderr, "Unknown token %u\n", (uint)mtype);
-            abort();
+            qWarning() << "Unknown token %u", (uint)mtype;
+            this->deleteLater();
+            goto out;
+            break;
         }
     }
 
@@ -250,12 +254,12 @@ void TraceClient::readControlSocket()
             buf = "";
             break;
         }
-        fprintf(stderr, "Trying chunk %s\n", abuf.constData());
+        qDebug() << "Trying chunk "  << abuf;
         if (!processChunk(abuf.constData())) {
             // segment got eaten out from under us perhaps
             continue;
         }
-        fprintf(stderr, "Done chunk %s\n", abuf.constData());
+        qDebug() << "Done chunk " << abuf;
     }
 }
 
