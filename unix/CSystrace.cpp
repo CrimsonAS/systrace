@@ -90,7 +90,6 @@ static void submit_chunk()
     if (shm_fd == -1)
         return;
 
-    shutdown(shm_fd, SHUT_WR);
     munmap(shmInitialPtr, ShmChunkSize);
     close(shm_fd);
     shm_fd = -1;
