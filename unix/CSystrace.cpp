@@ -109,6 +109,17 @@ static void submit_chunk()
 // Do not modify this outside of systrace_init! It is read from multiple
 // threads.
 static struct timespec originalTp;
+static uint64_t getMicroseconds()
+{
+    struct timespec tp;
+    if (clock_gettime(CLOCK_MONOTONIC, &tp) == -1) {
+        perror("Can't get time");
+        abort();
+    }
+
+    return (tp.tv_sec - originalTp.tv_sec) * 1000000 +
+           (tp.tv_nsec / 1000) - (originalTp.tv_nsec / 1000);
+}
 
 
 static void systrace_debug()
@@ -182,6 +193,8 @@ static void ensure_chunk(int mlen)
     h->version = TRACED_PROTOCOL_VERSION;
     h->pid = getpid();
     h->tid = gettid();
+    h->epoch = (originalTp.tv_sec * 1000000) +
+               (originalTp.tv_nsec / 1000);
     advance_chunk(sizeof(ChunkHeader));
 }
 
@@ -226,18 +239,6 @@ int systrace_should_trace(const char *module)
         return 0;
     // hack this if you want to temporarily omit some traces.
     return 1;
-}
-
-static uint64_t getMicroseconds()
-{
-    struct timespec tp;
-    if (clock_gettime(CLOCK_MONOTONIC, &tp) == -1) {
-        perror("Can't get time");
-        abort();
-    }
-
-    return (tp.tv_sec - originalTp.tv_sec) * 1000000 +
-           (tp.tv_nsec / 1000) - (originalTp.tv_nsec / 1000);
 }
 
 // ### should make use of process id, thread id, and maybe some uniqueness too

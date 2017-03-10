@@ -52,6 +52,11 @@
 const int ShmChunkSize = 1024 * 10;
 static FILE *traceOutputFile;
 
+// When we started traced's tracing.
+// A "reset epoch" command might be interesting in the future, but beware the
+// asserts in chunk processing.
+static uint64_t epoch;
+
 class TraceClient : public QObject
 {
     Q_OBJECT
@@ -110,11 +115,20 @@ bool TraceClient::processChunk(const char *name)
     ptr += sizeof(ChunkHeader);
     remainingBytes -= sizeof(ChunkHeader);
 
-    if (h->magic != TRACED_PROTOCOL_MAGIC || h->version != TRACED_PROTOCOL_VERSION) {
-        fprintf(stderr, "malformed chunk! magic %" PRIu64" version %d\n", h->magic, h->version);
+    assert(h->magic == TRACED_PROTOCOL_MAGIC);
+    assert(h->version == TRACED_PROTOCOL_VERSION);
+    assert(h->epoch >= epoch);
+
+    if (h->magic != TRACED_PROTOCOL_MAGIC || h->version != TRACED_PROTOCOL_VERSION || h->epoch < epoch) {
+        fprintf(stderr, "malformed chunk! magic %" PRIu64" version %d epoch %" PRIu64 "\n", h->magic, h->version, h->epoch);
         munmap(initialPtr, ShmChunkSize);
         return true;
     }
+
+    // Process epoch is a relative time of when the process started relative to
+    // us. We use this to offset the message times to make them make sense for
+    // everyone.
+    uint64_t processEpoch = h->epoch - epoch;
 
     while (1) {
         MessageType mtype = (MessageType)*ptr;
@@ -133,7 +147,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::BeginMessage: {
             assert(remainingBytes >= sizeof(BeginMessage));
             BeginMessage *m = (BeginMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"B\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->categoryId), getString(m->tracepointId));
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"B\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId));
             ptr += sizeof(BeginMessage);
             remainingBytes -= sizeof(BeginMessage);
             break;
@@ -141,7 +155,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::EndMessage: {
             assert(remainingBytes >= sizeof(EndMessage));
             EndMessage *m = (EndMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"E\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, m->microseconds, getString(m->categoryId), getString(m->tracepointId));
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"E\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId));
             ptr += sizeof(EndMessage);
             remainingBytes -= sizeof(EndMessage);
             break;
@@ -149,7 +163,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::CounterMessage: {
             assert(remainingBytes >= sizeof(CounterMessage));
             CounterMessage *m = (CounterMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), getString(m->tracepointId), m->value);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessage);
             remainingBytes -= sizeof(CounterMessage);
             break;
@@ -157,7 +171,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::CounterMessageWithId: {
             assert(remainingBytes >= sizeof(CounterMessageWithId));
             CounterMessageWithId *m = (CounterMessageWithId*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":%" PRIu64 ",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"C\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":%" PRIu64 ",\"args\":{\"%s\":%" PRIu64 "}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), m->id, getString(m->tracepointId), m->value);
             ptr += sizeof(CounterMessageWithId);
             remainingBytes -= sizeof(CounterMessageWithId);
             break;
@@ -165,7 +179,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::AsyncBeginMessage: {
             assert(remainingBytes >= sizeof(AsyncBeginMessage));
             AsyncBeginMessage *m = (AsyncBeginMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"b\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"b\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncBeginMessage);
             remainingBytes -= sizeof(AsyncBeginMessage);
             break;
@@ -173,7 +187,7 @@ bool TraceClient::processChunk(const char *name)
         case MessageType::AsyncEndMessage: {
             assert(remainingBytes >= sizeof(AsyncEndMessage));
             AsyncEndMessage *m = (AsyncEndMessage*)ptr;
-            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"e\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"ts\":%llu,\"ph\":\"e\",\"cat\":\"%s\",\"name\":\"%s\",\"id\":\"%p\",\"args\":{}},\n", h->pid, processEpoch + m->microseconds, getString(m->categoryId), getString(m->tracepointId), (void*)m->cookie);
             ptr += sizeof(AsyncEndMessage);
             remainingBytes -= sizeof(AsyncEndMessage);
             break;
@@ -189,7 +203,7 @@ bool TraceClient::processChunk(const char *name)
 
 #if 0
             fprintf(traceOutputFile, 
-            "{\"pid\":%" PRIu64 ",\"tid\":0,\"ts\":%llu,\"ph\":\"v\",\"cat\":\"%s\",\"name\":\"periodic_interval\",\"args\":{\"dumps\":{\"allocators\":{", h->pid, m->microseconds, getString(m->categoryId));
+            "{\"pid\":%" PRIu64 ",\"tid\":0,\"ts\":%llu,\"ph\":\"v\",\"cat\":\"%s\",\"name\":\"periodic_interval\",\"args\":{\"dumps\":{\"allocators\":{", h->pid, processEpoch + m->microseconds, getString(m->categoryId));
                 fprintf(traceOutputFile, "\"RootCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"801c8c513b1eb102\"},", rand());
                 fprintf(traceOutputFile, "\"AnotherRootCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"801c8c513b1eb102\"},", rand());
                 fprintf(traceOutputFile, "\"AnotherRootCategory/SubCategory\":{\"attrs\":{\"size\":{\"type\":\"scalar\",\"units\":\"bytes\",\"value\":\"%06x\"}},\"guid\":\"806a715752927f85\"}", rand());
@@ -306,6 +320,17 @@ int main(int argc, char **argv)
     });
 
     fprintf(traceOutputFile, "[\n");
+
+    // Now ready to trace, so get our 0 time.
+    // ### consider a mode where epoch is set on first recieved trace, not at start?
+    struct timespec tp;
+    if (clock_gettime(CLOCK_MONOTONIC, &tp) == -1) {
+        perror("Can't get time");
+        abort();
+    }
+
+    epoch = (tp.tv_sec * 1000000) + tp.tv_nsec / 1000;
+
     int ret = app.exec();
     fclose(traceOutputFile);
     return ret;

@@ -46,6 +46,10 @@ struct ChunkHeader
     uint16_t version;
     uint64_t pid;
     uint64_t tid;
+
+    // when the process under trace started. traced uses this against its own start
+    // time to calculate relative times.
+    uint64_t epoch;
 };
 
 struct BaseMessage
