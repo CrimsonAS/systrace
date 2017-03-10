@@ -60,7 +60,19 @@ static uint64_t epoch;
 class TraceClient : public QObject
 {
     Q_OBJECT
+
 public:
+    TraceClient(int f) : fd(f)
+    {
+        qInfo() << "New process connected on " << fd;
+    }
+
+    ~TraceClient()
+    {
+        qInfo() << "Process disconnected on " << fd;
+        close(fd);
+    }
+
     int fd;
     QByteArray buf;
 
@@ -227,7 +239,6 @@ void TraceClient::readControlSocket()
     char cmd[1024];
 
     if ((lcmd = ::read(this->fd, cmd, sizeof(cmd)-1)) <= 0) {
-        close(this->fd);
         this->deleteLater();
         return;
     }
@@ -311,8 +322,7 @@ int main(int argc, char **argv)
         struct sockaddr_un remote;
         int len = sizeof(struct sockaddr_un);
         int client = accept(s, (struct sockaddr*)&remote, (socklen_t *)&len);
-        TraceClient *tc = new TraceClient;
-        tc->fd = client;
+        TraceClient *tc = new TraceClient(client);
         QSocketNotifier *csn = new QSocketNotifier(client,  QSocketNotifier::Read);
         csn->setParent(tc);
         QObject::connect(csn, 
