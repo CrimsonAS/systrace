@@ -245,8 +245,6 @@ int systrace_should_trace(const char *module)
     return 1;
 }
 
-// ### should make use of process id, thread id, and maybe some uniqueness too
-// just in case we repeat either PIDs or TIDs.
 static uint64_t getStringId(const char *string)
 {
     auto it = registeredStrings.find(string);
