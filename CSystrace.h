@@ -48,11 +48,6 @@
 # define SYSTRACE_EXPORT __attribute__ ((visibility ("default")))
 #endif
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 /*!
  * Perform necessary set up. Should be called before any other functions.
  *
@@ -256,8 +251,5 @@ private:
 
 #define TRACE_COUNTER_ID1(module, tracepoint, value, id) \
     systrace_record_counter(module, tracepoint, value, id);
-
-
-#endif // __cplusplus
 
 #endif // SYSTRACE_H
