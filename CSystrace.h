@@ -80,117 +80,38 @@ SYSTRACE_EXPORT void systrace_deinit();
  */
 SYSTRACE_EXPORT int systrace_should_trace(const char *module);
 
-/*!
- * Record the start of a duration event in a given \a module and \a tracepoint.
- *
- * \note You must call systrace_duration_end with the same parameters once done.
- *
- * \sa systrace_async_begin(), systrace_duration_end()
- */
+struct CSystraceEvent;
+
 SYSTRACE_EXPORT void systrace_duration_begin(const char *module, const char *tracepoint);
-
-/*!
- * Record the end of a duration event in a given \a module and \a tracepoint.
- *
- * \note A call to this must have been preceeded by a systrace_duration_begin call
- * with the same parameters.
- *
- * \sa systrace_async_end()
- */
 SYSTRACE_EXPORT void systrace_duration_end(const char *module, const char *tracepoint);
-
-/*!
- * Record a counter event for the given \a module and \a tracepoint as being of
- * value \a value.
- *
- * In this particular case, \a tracepoint is most likely most useful to
- * represent a variable rather than a code location
- */
+SYSTRACE_EXPORT void systrace_duration_begin(CSystraceEvent &event);
+SYSTRACE_EXPORT void systrace_duration_end(CSystraceEvent &event);
 SYSTRACE_EXPORT void systrace_record_counter(const char *module, const char *tracepoint, int value, int id = -1);
-
-// ### 64 bit needed?
-
-/*!
- * Record the start of an asynchronous event for the given \a module and
- * \a tracepoint, tracking an event identified by the given \a cookie
- * (e.g. a pointer).
- *
- * \note You must call systrace_async_end with the same parameters once done.
- *
- * \sa systrace_duration_begin(), systrace_async_end()
- */
 SYSTRACE_EXPORT void systrace_async_begin(const char *module, const char *tracepoint, const void *cookie);
-
-/*!
- * Record the end of an asynchronous event for the given \a module and
- * \a tracepoint, tracking an event identified by the given \a cookie (e.g. a
- * pointer)
- *
- * \note A call to this must have been preceeded by a systrace_duration_begin call
- * with the same parameters.
- *
- * \sa systrace_async_begin()
- */
 SYSTRACE_EXPORT void systrace_async_end(const char *module, const char *tracepoint, const void *cookie);
-
-#ifdef __cplusplus
-}
-
-/*!
- * Simple C++ wrapper for a duration event.
- *
- * This is equivilent to using systrace_duration_begin() and
- * systrace_duration_end(), without the requirement to ensure
- * systrace_duration_end() is called in all exits.
- */
 struct SYSTRACE_EXPORT CSystraceEvent
 {
 public:
-    /*!
-     * Starts a tracepoint for \a module and \a tracepoint.
-     *
-     * \note Ownership is not automatically taken over the provided
-     * data; so you must ensure that they outlive the CSystraceEvent instance.
-     *
-     * To stop the event, delete it.
-     */
     CSystraceEvent(const char *module, const char *tracepoint)
         : m_module(module)
         , m_tracepoint(tracepoint)
     {
-        systrace_duration_begin(m_module, m_tracepoint);
+        systrace_duration_begin(*this);
     }
 
-    /*! Ends the tracepoint. */
     ~CSystraceEvent()
     {
-        systrace_duration_end(m_module, m_tracepoint);
+        systrace_duration_end(*this);
     }
 
-private:
     const char *m_module;
     const char *m_tracepoint;
+    uint64_t m_begin;
 };
 
-/*!
- * Simple wrapper for an asynchronous event.
- *
- * This is equivilent to using systrace_async_begin() and
- * systrace_async_end(), without the requirement to ensure
- * systrace_async_end() is called in all exits.
- */
 struct SYSTRACE_EXPORT CSystraceAsyncEvent
 {
 public:
-    /*!
-     * Starts and returns an asynchronous event for \a module and \a tracepoint,
-     * with the given unique \a cookie.
-     *
-     * \note Ownership is not automatically taken over the provided
-     * data; so you must ensure that they outlive the CSystraceAsyncEventinstance.
-     *
-     * To stop the event, delete it.
-     */
     CSystraceAsyncEvent(const char *module, const char *tracepoint, const void *cookie)
         : m_module(module)
         , m_tracepoint(tracepoint)
@@ -199,7 +120,6 @@ public:
         systrace_async_begin(m_module, m_tracepoint, m_cookie);
     }
 
-    /*! Ends the event. */
     ~CSystraceAsyncEvent()
     {
         systrace_async_end(m_module, m_tracepoint, m_cookie);

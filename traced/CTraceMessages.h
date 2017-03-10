@@ -34,10 +34,11 @@ enum class MessageType : uint8_t
     RegisterStringMessage = 1,
     BeginMessage = 2,
     EndMessage = 3,
-    AsyncBeginMessage = 4,
-    AsyncEndMessage = 5,
-    CounterMessage = 6,
-    CounterMessageWithId = 7
+    DurationMessage = 4,
+    AsyncBeginMessage = 5,
+    AsyncEndMessage = 6,
+    CounterMessage = 7,
+    CounterMessageWithId = 8
 };
 
 // ### consider splitting ChunkHeader to a ProcessHeaderMessage and
@@ -80,6 +81,11 @@ struct BeginMessage : public RegularMessage
 
 struct EndMessage : public RegularMessage
 {
+};
+
+struct DurationMessage : public RegularMessage
+{
+    uint64_t duration;
 };
 
 struct AsyncBeginMessage : public RegularMessage

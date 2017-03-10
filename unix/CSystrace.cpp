@@ -268,11 +268,10 @@ static uint64_t getStringId(const char *string)
     return it->second;
 }
 
-// ### use "X" events?
 void systrace_duration_begin(const char *module, const char *tracepoint)
 {
-    if (!systrace_should_trace(module))
-        return;
+     if (!systrace_should_trace(module))
+         return;
 
     uint64_t modid = getStringId(module);
     uint64_t tpid = getStringId(tracepoint);
@@ -303,6 +302,35 @@ void systrace_duration_end(const char *module, const char *tracepoint)
     m->categoryId = modid;
     m->tracepointId = tpid;
     advance_chunk(sizeof(EndMessage));
+
+    systrace_debug();
+}
+
+void systrace_duration_begin(CSystraceEvent &event)
+{
+    if (!systrace_should_trace(event.m_module))
+        return;
+
+    event.m_begin = getMicroseconds();
+    // Do nothing We will write the event on end.
+}
+
+void systrace_duration_end(CSystraceEvent &event)
+{
+    if (!systrace_should_trace(event.m_module))
+        return;
+
+    uint64_t modid = getStringId(event.m_module);
+    uint64_t tpid = getStringId(event.m_tracepoint);
+
+    ensure_chunk(sizeof(DurationMessage));
+    DurationMessage *m = (DurationMessage*)shmPtr;
+    m->messageType = MessageType::DurationMessage;
+    m->microseconds = event.m_begin;
+    m->duration = getMicroseconds() - event.m_begin;
+    m->categoryId = modid;
+    m->tracepointId = tpid;
+    advance_chunk(sizeof(DurationMessage));
 
     systrace_debug();
 }

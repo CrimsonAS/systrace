@@ -196,6 +196,14 @@ bool TraceClient::processChunk(const char *name)
                 goto out;
             break;
         }
+        case MessageType::DurationMessage: {
+            assert(remainingChunkSize >= sizeof(DurationMessage));
+            DurationMessage *m = (DurationMessage*)ptr;
+            fprintf(traceOutputFile, "{\"pid\":%" PRIu64 ",\"tid\":%" PRIu64 ",\"ts\":%llu,\"dur\":%llu,\"ph\":\"X\",\"cat\":\"%s\",\"name\":\"%s\"},\n", h->pid, h->tid, processEpoch + m->microseconds, m->duration, getString(m->categoryId), getString(m->tracepointId));
+            if (!advanceChunk(sizeof(DurationMessage)))
+                goto out;
+            break;
+        }
         case MessageType::CounterMessage: {
             assert(remainingChunkSize >= sizeof(CounterMessage));
             CounterMessage *m = (CounterMessage*)ptr;
