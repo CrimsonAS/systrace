@@ -263,6 +263,7 @@ bool TraceClient::processChunk(const char *name)
 
 out:
     munmap(initialPtr, ShmChunkSize);
+    close(shm_fd);
 
     return true;
 }
