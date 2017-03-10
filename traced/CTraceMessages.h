@@ -67,41 +67,33 @@ struct RegisterStringMessage : public BaseMessage
     char stringData; // and it follows on for length bytes
 };
 
-struct BeginMessage : public BaseMessage
+struct RegularMessage : public BaseMessage
 {
     uint64_t microseconds;
     uint16_t categoryId;
     uint64_t tracepointId;
 };
 
-struct EndMessage : public BaseMessage
+struct BeginMessage : public RegularMessage
 {
-    uint64_t microseconds;
-    uint16_t categoryId;
-    uint64_t tracepointId;
 };
 
-struct AsyncBeginMessage : public BaseMessage
+struct EndMessage : public RegularMessage
 {
-    uint64_t microseconds;
-    uint16_t categoryId;
-    uint64_t tracepointId;
+};
+
+struct AsyncBeginMessage : public RegularMessage
+{
     uint64_t cookie;
 };
 
-struct AsyncEndMessage : public BaseMessage
+struct AsyncEndMessage : public RegularMessage
 {
-    uint64_t microseconds;
-    uint16_t categoryId;
-    uint64_t tracepointId;
     uint64_t cookie;
 };
 
-struct CounterMessage : public BaseMessage
+struct CounterMessage : public RegularMessage
 {
-    uint64_t microseconds;
-    uint16_t categoryId;
-    uint64_t tracepointId;
     uint64_t value;
 };
 
