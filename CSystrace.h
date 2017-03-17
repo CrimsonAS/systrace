@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 # if defined(BUILDING_DLL)
