@@ -24,8 +24,15 @@
 #ifndef CTRACEMESSAGES_H
 #define CTRACEMESSAGES_H
 
+// Used by traced to clean up at startup time. Used client side to figure out
+// what to allocate.
 #define TRACED_MAX_SHM_CHUNKS 99999
+
+// Used to mark a SHM chunk for some measure of safety.
 #define TRACED_PROTOCOL_MAGIC 0xDEADBEEFBAAD
+
+// Used to mark a SHM chunk as being written/read by a given version, for
+// safety's sake. Bump this if the protocol changes.
 #define TRACED_PROTOCOL_VERSION 256
 
 enum class MessageType : uint8_t
