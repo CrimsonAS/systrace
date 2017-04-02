@@ -48,13 +48,34 @@
 
 // Information about SHM chunks
 const int ShmChunkSize = 1024 * 10;
-static thread_local int shm_fd = -1;
-static thread_local char *shmInitialPtr = 0;
-static thread_local char *shmPtr = 0;
-static thread_local char *currentChunkName = 0;
 
-// How much of the SHM chunk for this thread is left, in bytes?
-static thread_local int remainingChunkSize;
+// Data about the process of tracing itself.
+// This is held thread-local.
+struct CTracerThreadData
+{
+    // The FD for the open SHM chunk
+    int m_shm_fd = -1;
+
+    // The pointer to the start of the SHM chunk
+    char *m_shmInitialPtr = 0;
+
+    // The pointer to the current location in the SHM chunk (so written len
+    // would be m_shmPtr - m_shmInitialPtr).
+    char *m_shmPtr = 0;
+
+    // The name of the current SHM chunk
+    char *m_currentChunkName = 0;
+
+    // How much of the SHM chunk for this thread is left, in bytes?
+    int m_remainingChunkSize = 0;
+
+    // A map of string -> ID for this thread. Each thread registers strings
+    // independently (as it has its own chunks, its own code, and we don't want
+    // to lock as much as possible).
+    std::unordered_map<const char *, uint64_t> m_registeredStrings;
+};
+
+static thread_local CTracerThreadData tracerThreadData;
 
 // FD to communicate with traced
 static int traced_fd = -1;
@@ -62,7 +83,6 @@ static int traced_fd = -1;
 // Each thread registers unique strings as it comes across them here and sends a
 // registration message to traced.
 static std::atomic<uint64_t> currentStringId;
-static thread_local std::unordered_map<const char *, uint64_t> registeredStrings;
 
 //gettid(); except that mac sucks
 static int gettid()
@@ -74,9 +94,9 @@ static int gettid()
  */
 static void advance_chunk(int len)
 {
-    shmPtr += len;
-    remainingChunkSize -= len;
-    assert(remainingChunkSize >= 0);
+    tracerThreadData.m_shmPtr += len;
+    tracerThreadData.m_remainingChunkSize -= len;
+    assert(tracerThreadData.m_remainingChunkSize >= 0);
 }
 
 /*!
@@ -87,23 +107,23 @@ static void advance_chunk(int len)
  */
 static void submit_chunk()
 {
-    if (shm_fd == -1)
+    if (tracerThreadData.m_shm_fd == -1)
         return;
 
-    munmap(shmInitialPtr, ShmChunkSize);
-    close(shm_fd);
-    shm_fd = -1;
-    shmPtr = 0;
+    munmap(tracerThreadData.m_shmInitialPtr, ShmChunkSize);
+    close(tracerThreadData.m_shm_fd);
+    tracerThreadData.m_shm_fd = -1;
+    tracerThreadData.m_shmPtr = 0;
 
     char buf[1024];
-    int blen = sprintf(buf, "%s\n", currentChunkName);
+    int blen = sprintf(buf, "%s\n", tracerThreadData.m_currentChunkName);
     if (0) // left for debug purposes
         printf("TID %d sending %s", gettid(), buf);
     int ret = write(traced_fd, buf, blen);
     if (ret == -1) {
         // ### we also need to ignore SIGPIPE or clients will die if traced does.
         perror("Can't write to traced! Giving up!");
-        shm_unlink(currentChunkName);
+        shm_unlink(tracerThreadData.m_currentChunkName);
         close(traced_fd);
         traced_fd = -1;
     }
@@ -135,10 +155,10 @@ static void systrace_debug()
 
     debugging = true;
     // These vars are to try avoid spurious reporting.
-    static thread_local int lastRemainingChunkSize = 0;
-    if (remainingChunkSize != lastRemainingChunkSize) {
-        lastRemainingChunkSize = remainingChunkSize;
-        systrace_record_counter("systrace",  "remainingChunkSize",  remainingChunkSize, gettid());
+    static thread_local int lastm_remainingChunkSize = 0;
+    if (m_remainingChunkSize != lastm_remainingChunkSize) {
+        lastm_remainingChunkSize = m_remainingChunkSize;
+        systrace_record_counter("systrace",  "m_remainingChunkSize",  m_remainingChunkSize, gettid());
     }
     static uint64_t lastStringCount = 0;
     if (lastStringCount != currentStringId.load()) {
@@ -154,47 +174,47 @@ static void systrace_debug()
  */
 static void ensure_chunk(int mlen)
 {
-    if (shm_fd != -1 && remainingChunkSize >= mlen)
+    if (tracerThreadData.m_shm_fd != -1 && tracerThreadData.m_remainingChunkSize >= mlen)
         return;
 
-    if (shm_fd != -1) {
+    if (tracerThreadData.m_shm_fd != -1) {
         submit_chunk();
     }
 
     // ### linux via /dev/shm or memfd_create?
     int nextShmId = 0;
-    while (shm_fd == -1 && nextShmId < TRACED_MAX_SHM_CHUNKS) {
-        if (!currentChunkName)
-            asprintf(&currentChunkName, "tracechunk-%d", nextShmId++);
+    while (tracerThreadData.m_shm_fd == -1 && nextShmId < TRACED_MAX_SHM_CHUNKS) {
+        if (!tracerThreadData.m_currentChunkName)
+            asprintf(&tracerThreadData.m_currentChunkName, "tracechunk-%d", nextShmId++);
 
-        shm_fd = shm_open(currentChunkName, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
-        if (shm_fd != -1) {
+        tracerThreadData.m_shm_fd = shm_open(tracerThreadData.m_currentChunkName, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+        if (tracerThreadData.m_shm_fd != -1) {
             break; // we won!
         } else {
             // try again. either something is using that chunk name, or traced
             // hasn't released it for us to reuse yet.
-            free(currentChunkName);
-            currentChunkName = 0;
+            free(tracerThreadData.m_currentChunkName);
+            tracerThreadData.m_currentChunkName = 0;
         }
     }
 
-    if (shm_fd == -1) {
+    if (tracerThreadData.m_shm_fd == -1) {
         fprintf(stderr, "Something is seriously screwed. Can't find any free SHM chunk, tried all %d\n", TRACED_MAX_SHM_CHUNKS);
         abort();
     }
 
-    if (ftruncate(shm_fd, ShmChunkSize) == -1) {
+    if (ftruncate(tracerThreadData.m_shm_fd, ShmChunkSize) == -1) {
         perror("Can't ftruncate SHM!");
         abort();
     }
-    shmPtr = (char*)mmap(0, ShmChunkSize, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (shmPtr == MAP_FAILED) {
+    tracerThreadData.m_shmPtr = (char*)mmap(0, ShmChunkSize, PROT_READ | PROT_WRITE, MAP_SHARED, tracerThreadData.m_shm_fd, 0);
+    if (tracerThreadData.m_shmPtr == MAP_FAILED) {
         perror("Can't map SHM!");
         abort();
     }
-    remainingChunkSize = ShmChunkSize;
+    tracerThreadData.m_remainingChunkSize = ShmChunkSize;
 
-    ChunkHeader *h = (ChunkHeader*)shmPtr;
+    ChunkHeader *h = (ChunkHeader*)tracerThreadData.m_shmPtr;
     h->magic = TRACED_PROTOCOL_MAGIC;
     h->version = TRACED_PROTOCOL_VERSION;
     h->pid = getpid();
@@ -249,15 +269,15 @@ int systrace_should_trace(const char *module)
 
 static uint64_t getStringId(const char *string)
 {
-    auto it = registeredStrings.find(string);
-    if (it == registeredStrings.end()) {
+    auto it = tracerThreadData.m_registeredStrings.find(string);
+    if (it == tracerThreadData.m_registeredStrings.end()) {
         uint64_t nid = currentStringId.fetch_add(1);
-        registeredStrings[string] = nid;
+        tracerThreadData.m_registeredStrings[string] = nid;
 
         int slen = strlen(string);
         assert(slen < ShmChunkSize / 100); // 102 characters, assuming 10kb
         ensure_chunk(sizeof(RegisterStringMessage) + slen);
-        RegisterStringMessage *m = (RegisterStringMessage*)shmPtr;
+        RegisterStringMessage *m = (RegisterStringMessage*)tracerThreadData.m_shmPtr;
         m->messageType = MessageType::RegisterStringMessage;
         m->id = nid;
         m->length = slen;
@@ -279,7 +299,7 @@ void systrace_duration_begin(const char *module, const char *tracepoint)
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(BeginMessage));
-    BeginMessage *m = (BeginMessage*)shmPtr;
+    BeginMessage *m = (BeginMessage*)tracerThreadData.m_shmPtr;
     m->messageType = MessageType::BeginMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
@@ -298,7 +318,7 @@ void systrace_duration_end(const char *module, const char *tracepoint)
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(EndMessage));
-    EndMessage *m = (EndMessage*)shmPtr;
+    EndMessage *m = (EndMessage*)tracerThreadData.m_shmPtr;
     m->messageType = MessageType::EndMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
@@ -326,7 +346,7 @@ void systrace_duration_end(CSystraceEvent &event)
     uint64_t tpid = getStringId(event.m_tracepoint);
 
     ensure_chunk(sizeof(DurationMessage));
-    DurationMessage *m = (DurationMessage*)shmPtr;
+    DurationMessage *m = (DurationMessage*)tracerThreadData.m_shmPtr;
     m->messageType = MessageType::DurationMessage;
     m->microseconds = event.m_begin;
     m->duration = getMicroseconds() - event.m_begin;
@@ -347,7 +367,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
 
     if (id == -1) {
         ensure_chunk(sizeof(CounterMessage));
-        CounterMessage *m = (CounterMessage*)shmPtr;
+        CounterMessage *m = (CounterMessage*)tracerThreadData.m_shmPtr;
         m->messageType = MessageType::CounterMessage;
         m->microseconds = getMicroseconds();
         m->categoryId = modid;
@@ -356,7 +376,7 @@ void systrace_record_counter(const char *module, const char *tracepoint, int val
         advance_chunk(sizeof(CounterMessage));
     } else {
         ensure_chunk(sizeof(CounterMessageWithId));
-        CounterMessageWithId *m = (CounterMessageWithId*)shmPtr;
+        CounterMessageWithId *m = (CounterMessageWithId*)tracerThreadData.m_shmPtr;
         m->messageType = MessageType::CounterMessageWithId;
         m->microseconds = getMicroseconds();
         m->categoryId = modid;
@@ -378,7 +398,7 @@ void systrace_async_begin(const char *module, const char *tracepoint, const void
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(AsyncBeginMessage));
-    AsyncBeginMessage *m = (AsyncBeginMessage*)shmPtr;
+    AsyncBeginMessage *m = (AsyncBeginMessage*)tracerThreadData.m_shmPtr;
     m->messageType = MessageType::AsyncBeginMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
@@ -398,7 +418,7 @@ void systrace_async_end(const char *module, const char *tracepoint, const void *
     uint64_t tpid = getStringId(tracepoint);
 
     ensure_chunk(sizeof(AsyncEndMessage));
-    AsyncEndMessage *m = (AsyncEndMessage*)shmPtr;
+    AsyncEndMessage *m = (AsyncEndMessage*)tracerThreadData.m_shmPtr;
     m->messageType = MessageType::AsyncEndMessage;
     m->microseconds = getMicroseconds();
     m->categoryId = modid;
