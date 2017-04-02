@@ -77,12 +77,23 @@ struct CTracerThreadData
 
 static thread_local CTracerThreadData tracerThreadData;
 
-// FD to communicate with traced
-static int traced_fd = -1;
+// Global data. There are no locks in place, so don't be dumb when using this.
+struct CTracerGlobalData
+{
+    // FD to communicate with traced
+    int m_traced_fd = -1;
 
-// Each thread registers unique strings as it comes across them here and sends a
-// registration message to traced.
-static std::atomic<uint64_t> currentStringId;
+    // Each thread registers unique strings as it comes across them here and sends a
+    // registration message to traced.
+    std::atomic<uint64_t> m_currentStringId;
+
+    // When the trace started (when systrace_init was called).
+    // Do not modify this outside of systrace_init! It is read from multiple
+    // threads.
+    struct timespec m_originalTp;
+};
+
+static CTracerGlobalData tracerGlobalData;
 
 //gettid(); except that mac sucks
 static int gettid()
@@ -119,20 +130,16 @@ static void submit_chunk()
     int blen = sprintf(buf, "%s\n", tracerThreadData.m_currentChunkName);
     if (0) // left for debug purposes
         printf("TID %d sending %s", gettid(), buf);
-    int ret = write(traced_fd, buf, blen);
+    int ret = write(tracerGlobalData.m_traced_fd, buf, blen);
     if (ret == -1) {
         // ### we also need to ignore SIGPIPE or clients will die if traced does.
         perror("Can't write to traced! Giving up!");
         shm_unlink(tracerThreadData.m_currentChunkName);
-        close(traced_fd);
-        traced_fd = -1;
+        close(tracerGlobalData.m_traced_fd);
+        tracerGlobalData.m_traced_fd = -1;
     }
 }
 
-// When the trace started (when systrace_init was called).
-// Do not modify this outside of systrace_init! It is read from multiple
-// threads.
-static struct timespec originalTp;
 static uint64_t getMicroseconds()
 {
     struct timespec tp;
@@ -141,8 +148,8 @@ static uint64_t getMicroseconds()
         abort();
     }
 
-    return (tp.tv_sec - originalTp.tv_sec) * 1000000 +
-           (tp.tv_nsec / 1000) - (originalTp.tv_nsec / 1000);
+    return (tp.tv_sec - tracerGlobalData.m_originalTp.tv_sec) * 1000000 +
+           (tp.tv_nsec / 1000) - (tracerGlobalData.m_originalTp.tv_nsec / 1000);
 }
 
 
@@ -161,8 +168,8 @@ static void systrace_debug()
         systrace_record_counter("systrace",  "m_remainingChunkSize",  m_remainingChunkSize, gettid());
     }
     static uint64_t lastStringCount = 0;
-    if (lastStringCount != currentStringId.load()) {
-        lastStringCount = currentStringId.load();
+    if (lastStringCount != tracerGlobalData.m_currentStringId.load()) {
+        lastStringCount = tracerGlobalData.m_currentStringId.load();
         systrace_record_counter("systrace", "registeredStringCount", lastStringCount); // not thread-specific
     }
     debugging = false;
@@ -219,22 +226,22 @@ static void ensure_chunk(int mlen)
     h->version = TRACED_PROTOCOL_VERSION;
     h->pid = getpid();
     h->tid = gettid();
-    h->epoch = (originalTp.tv_sec * 1000000) +
-               (originalTp.tv_nsec / 1000);
+    h->epoch = (tracerGlobalData.m_originalTp.tv_sec * 1000000) +
+               (tracerGlobalData.m_originalTp.tv_nsec / 1000);
     advance_chunk(sizeof(ChunkHeader));
 }
 
 __attribute__((constructor)) void systrace_init()
 {
-    if (clock_gettime(CLOCK_MONOTONIC, &originalTp) == -1) {
+    if (clock_gettime(CLOCK_MONOTONIC, &tracerGlobalData.m_originalTp) == -1) {
         perror("Can't get time");
         abort();
     }
 
     if (getenv("TRACED") == NULL) {
-        traced_fd = open("/tmp/traced", O_WRONLY);
+        tracerGlobalData.m_traced_fd = open("/tmp/traced", O_WRONLY);
 
-        if ((traced_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+        if ((tracerGlobalData.m_traced_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
             perror("Can't create socket for traced!");
         }
 
@@ -242,7 +249,7 @@ __attribute__((constructor)) void systrace_init()
         remote.sun_family = AF_UNIX;
         strcpy(remote.sun_path, "/tmp/traced");
         int len = strlen(remote.sun_path) + sizeof(remote.sun_family) + 1;
-        if (connect(traced_fd, (struct sockaddr *)&remote, len) == -1) {
+        if (connect(tracerGlobalData.m_traced_fd, (struct sockaddr *)&remote, len) == -1) {
             perror("Can't connect to traced!");
         }
     } else {
@@ -252,16 +259,16 @@ __attribute__((constructor)) void systrace_init()
 
 __attribute__((destructor)) void systrace_deinit()
 {
-    if (traced_fd == -1)
+    if (tracerGlobalData.m_traced_fd == -1)
         return;
     submit_chunk();
-    close(traced_fd);
-    traced_fd = -1;
+    close(tracerGlobalData.m_traced_fd);
+    tracerGlobalData.m_traced_fd = -1;
 }
 
 int systrace_should_trace(const char *module)
 {
-    if (traced_fd == -1)
+    if (tracerGlobalData.m_traced_fd == -1)
         return 0;
     // hack this if you want to temporarily omit some traces.
     return 1;
@@ -271,7 +278,7 @@ static uint64_t getStringId(const char *string)
 {
     auto it = tracerThreadData.m_registeredStrings.find(string);
     if (it == tracerThreadData.m_registeredStrings.end()) {
-        uint64_t nid = currentStringId.fetch_add(1);
+        uint64_t nid = tracerGlobalData.m_currentStringId.fetch_add(1);
         tracerThreadData.m_registeredStrings[string] = nid;
 
         int slen = strlen(string);
