@@ -46,6 +46,8 @@
 #include "CSystrace.h"
 #include "CTraceMessages.h"
 
+#include <atomic>
+
 // Information about SHM chunks
 const int ShmChunkSize = 1024 * 10;
 
@@ -98,7 +100,11 @@ static CTracerGlobalData tracerGlobalData;
 //gettid(); except that mac sucks
 static int gettid()
 {
+#ifdef __APPLE__
     return syscall(SYS_thread_selfid);
+#else
+    return syscall(SYS_gettid);
+#endif
 }
 
 /*! Update the book keeping for the current position in the chunk.
