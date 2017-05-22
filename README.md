@@ -2,7 +2,8 @@
 
 systrace helps you perform system tracing, to find out what is going on in an
 application, or a whole system. It consists of an API (CSystrace.h) to write
-data, and multiple backends (android, unix) to implement that API.
+data, and multiple backends (android, unix) to implement that API. You can think
+of it as a more generic implementation of Chromium's tracing code.
 
 On top of that, you are expected to use catapult (Chrome's about:tracing viewer)
 to visualize the trace data.
@@ -14,6 +15,11 @@ implementation).
 
 **Note**! This code has absolutely no API or ABI stability guarentees. It also
 has no stability guarentees in general, but it probably won't eat your pet dog.
+
+**Note**! We are working to provide an API similar to Chromium's tracing API
+(TRACE_EVENT0 and such). The systrace-specific API referred to below
+(systrace_duration_begin etc) are considered legacy, and should not be used in
+the longer term.
 
 # events
 
