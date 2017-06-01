@@ -65,10 +65,11 @@
 
 // ndk: /usr/include/rs/rsCppUtils.h
 #include <sys/time.h>
+#include <time.h>
 typedef int64_t nsecs_t;  // nano-seconds
 static inline nsecs_t systemTime(int clock)
 {
-#if defined(HAVE_POSIX_CLOCKS)
+#if defined(_POSIX_MONOTONIC_CLOCK)
     static const clockid_t clocks[] = {
             CLOCK_REALTIME,
             CLOCK_MONOTONIC,
