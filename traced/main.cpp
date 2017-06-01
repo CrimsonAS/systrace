@@ -44,6 +44,8 @@
 #include <QByteArray>
 #include <QSocketNotifier>
 #include <QObject>
+#include <QProcess>
+#include <QFile>
 
 #include <unordered_map>
 
@@ -290,6 +292,9 @@ void sigintHandler(int signo)
     qApp->exit();
 }
 
+// Experimental.
+//#define USE_ATRACE
+
 int main(int argc, char **argv) 
 {
     // Unlink all chunks on startup to prevent leaks.
@@ -304,6 +309,36 @@ int main(int argc, char **argv)
     sigaction(SIGINT, &act, NULL);
 
     QCoreApplication app(argc, argv);
+
+#if defined(USE_ATRACE)
+    QProcess traceProcess;
+    QObject::connect(&traceProcess, &QProcess::readyReadStandardError, [&]() {
+        fprintf(stderr, "%s", traceProcess.readAllStandardError().constData());
+    });
+
+    traceProcess.start("./atrace/atrace", QStringList() << "-b" << "10240" << "-c" << "-t" << "20"
+        << "sched"
+        //<< "irq"
+        //<< "i2c"
+        << "freq"
+        //<< "membus"
+        << "idle"
+        //<< "disk"
+        //<< "mmc"
+        //<< "load"
+        //<< "sync"
+        //<< "workq"
+        //<< "memreclaim"
+        //<< "regulators"
+        //<< "binder_driver"
+        //<< "binder_lock"
+        //<< "pagecache"
+    );
+
+    if (!traceProcess.waitForStarted(1000)) {
+        qWarning("Can't start trace-cmd!");
+    }
+#endif // USE_ATRACE
 
     traceOutputFile = stdout;
 
@@ -353,9 +388,31 @@ int main(int argc, char **argv)
             &QSocketNotifier::activated, tc, &TraceClient::readControlSocket);
     });
 
-    fprintf(traceOutputFile, "[\n");
+    fprintf(traceOutputFile, "{\"traceEvents\": [\n");
 
     int ret = app.exec();
+
+#if defined(USE_ATRACE)
+    if (traceProcess.waitForFinished(-1)) {
+        qWarning("Can't stop trace-cmd!");
+    }
+#endif
+
+    // Remove trailing , from traceOutputFile (-2 because there's a \n there too).
+    fseek(traceOutputFile, -2, SEEK_CUR);
+    fprintf(traceOutputFile, "]\n");
+
+#if defined(USE_ATRACE)
+    QByteArray out = traceProcess.readAllStandardOutput();
+    out = out.replace("\n", "\\n");
+
+    fprintf(traceOutputFile, ",\"systemTraceEvents\":\"# tracer:\\n");
+    fprintf(traceOutputFile, "%s", out.constData());
+    fprintf(traceOutputFile, "\"\n");
+#endif
+
+    fprintf(traceOutputFile, "}\n");
+
     fclose(traceOutputFile);
     return ret;
 }

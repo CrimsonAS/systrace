@@ -250,6 +250,7 @@ static bool truncateFile(const char* path)
 static bool _writeStr(const char* filename, const char* str, int flags)
 {
     std::string fullFilename = g_traceFolder + filename;
+    fprintf(stderr, "writing %s to %s\n", str, fullFilename.c_str());
     int fd = open(fullFilename.c_str(), flags);
     if (fd == -1) {
         fprintf(stderr, "error opening %s: %s (%d)\n", fullFilename.c_str(),
