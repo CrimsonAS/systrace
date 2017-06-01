@@ -9,3 +9,5 @@ INCLUDEPATH += ../traced
 HEADERS += CSystrace.h
 SOURCES += ../unix/CSystrace.cpp \
            main.cpp
+
+linux: LIBS += -lrt

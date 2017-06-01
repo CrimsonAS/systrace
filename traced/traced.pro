@@ -3,7 +3,7 @@ TEMPLATE = app
 TARGET = traced
 INCLUDEPATH += .
 
-LIBS += -lrt
+linux:LIBS += -lrt
 
 # Input
 SOURCES += main.cpp
