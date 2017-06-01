@@ -52,11 +52,6 @@
 const int ShmChunkSize = 1024 * 10;
 static FILE *traceOutputFile;
 
-// When we started traced's tracing.
-// A "reset epoch" command might be interesting in the future, but beware the
-// asserts in chunk processing.
-static uint64_t epoch;
-
 class TraceClient : public QObject
 {
     Q_OBJECT
@@ -145,26 +140,20 @@ bool TraceClient::processChunk(const char *name)
     }
 
     ChunkHeader *h = (ChunkHeader*)ptr;
-    uint64_t processEpoch = 0;
+    const uint64_t processEpoch = h->epoch;
     if (!advanceChunk(sizeof(ChunkHeader)))
         goto out;
 
     assert(h->magic == TRACED_PROTOCOL_MAGIC);
     assert(h->version == TRACED_PROTOCOL_VERSION);
-    assert(h->epoch >= epoch);
 
-    if (h->magic != TRACED_PROTOCOL_MAGIC || h->version != TRACED_PROTOCOL_VERSION || h->epoch < epoch) {
+    if (h->magic != TRACED_PROTOCOL_MAGIC || h->version != TRACED_PROTOCOL_VERSION) {
         qWarning() << "malformed chunk! magic " << h->magic
                    << " version " << h->version
                    << " epoch " << h->epoch;
         munmap(initialPtr, ShmChunkSize);
         return true;
     }
-
-    // Process epoch is a relative time of when the process started relative to
-    // us. We use this to offset the message times to make them make sense for
-    // everyone.
-    processEpoch = h->epoch - epoch;
 
     while (remainingChunkSize) {
         MessageType mtype = (MessageType)*ptr;
@@ -365,16 +354,6 @@ int main(int argc, char **argv)
     });
 
     fprintf(traceOutputFile, "[\n");
-
-    // Now ready to trace, so get our 0 time.
-    // ### consider a mode where epoch is set on first recieved trace, not at start?
-    struct timespec tp;
-    if (clock_gettime(CLOCK_MONOTONIC, &tp) == -1) {
-        perror("Can't get time");
-        abort();
-    }
-
-    epoch = (tp.tv_sec * 1000000) + tp.tv_nsec / 1000;
 
     int ret = app.exec();
     fclose(traceOutputFile);
