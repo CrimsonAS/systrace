@@ -1103,7 +1103,7 @@ int main(int argc, char **argv)
     ok &= startTrace();
     if (ok && traceStart) {
         if (!traceStream) {
-            printf("capturing trace...");
+            ALOGI("capturing trace...");
             fflush(stdout);
         }
         // We clear the trace after starting it because tracing gets enabled for
@@ -1133,23 +1133,23 @@ int main(int argc, char **argv)
         stopTrace();
     if (ok && traceDump) {
         if (!g_traceAborted) {
-            printf(" done\n");
+            ALOGI(" done\n");
             fflush(stdout);
             int outFd = STDOUT_FILENO;
             if (g_outputFile) {
                 outFd = open(g_outputFile, O_WRONLY | O_CREAT, 0644);
             }
             if (outFd == -1) {
-                printf("Failed to open '%s', err=%d", g_outputFile, errno);
+                fprintf(stderr, "Failed to open '%s', err=%d", g_outputFile, errno);
             } else {
-                dprintf(outFd, "TRACE:\n");
+                //dprintf(outFd, "TRACE:\n");
                 dumpTrace(outFd);
                 if (g_outputFile) {
                     close(outFd);
                 }
             }
         } else {
-            printf("\ntrace aborted.\n");
+            ALOGI("\ntrace aborted.\n");
             fflush(stdout);
         }
         clearTrace();
