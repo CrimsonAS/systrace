@@ -61,7 +61,7 @@
 #define ATRACE_TAG_ADB              (1<<22)
 #define ATRACE_TAG_LAST             ATRACE_TAG_ADB
 
-#define ALOGI(x) printf("%s\n", x);
+#define ALOGI(x) fprintf(stderr, "%s\n", x);
 
 // ndk: /usr/include/rs/rsCppUtils.h
 #include <sys/time.h>
