@@ -848,6 +848,7 @@ static void dumpTrace(int outFd)
         return;
     }
     if (g_compress) {
+#if 0
         z_stream zs;
         memset(&zs, 0, sizeof(zs));
         int result = deflateInit(&zs, Z_DEFAULT_COMPRESSION);
@@ -912,6 +913,7 @@ static void dumpTrace(int outFd)
         if (result != Z_OK) {
             fprintf(stderr, "error cleaning up zlib: %d\n", result);
         }
+#endif
     } else {
         ssize_t sent = 0;
         while ((sent = sendfile(outFd, traceFD, NULL, 64*1024*1024)) > 0);
