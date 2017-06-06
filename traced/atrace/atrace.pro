@@ -12,3 +12,5 @@ DEFINES += QT_DEPRECATED_WARNINGS
 HEADERS += atrace_compat.h
 SOURCES += atrace.cpp
 
+linux:LIBS += -lrt
+
